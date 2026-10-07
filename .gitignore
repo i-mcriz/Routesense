@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Large/raw datasets
+data/raw/
+data/processed/
+*.tif
+*.tiff
+*.hgt
+*.zip
+
+# Generated ML models / large artifacts
+models/*.pkl
+models/*.joblib
+models/*.h5
+models/*.keras
+models/*.pt
+models/*.pth
+
+# Generated outputs
+outputs/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.osm.pbf
+data/*routing_graph.pkl

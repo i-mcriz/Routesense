@@ -1,0 +1,12 @@
+Prototype Classification Report
+Note: Based on synthetic heuristic labels.
+
+              precision    recall  f1-score   support
+
+           0       0.71      0.75      0.73     39339
+           1       0.60      0.51      0.55     39882
+           2       0.64      0.76      0.70     20007
+
+    accuracy                           0.66     99228
+   macro avg       0.65      0.67      0.66     99228
+weighted avg       0.65      0.66      0.65     99228

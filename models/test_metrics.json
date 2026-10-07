@@ -1,0 +1,8 @@
+{
+    "Model": "Random Forest",
+    "Test Accuracy": 0.6571834562825009,
+    "Test Precision": 0.6517356889689746,
+    "Test Recall": 0.6742701694292016,
+    "Test F1": 0.6600542904672743,
+    "Train F1": 0.754066055027839
+}

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RouteSense AI — Disaster Evacuation Intelligence</title>
+    <meta name="description" content="AI-powered disaster evacuation routing system for Kerala. Prototype road-risk classification with flood simulation.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ── Top Bar ──────────────────────────────────── -->
+    <header id="header">
+        <div id="brand">
+            <div id="brand-icon">
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                    <circle cx="14" cy="14" r="12" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>
+                    <circle cx="14" cy="14" r="5" fill="rgba(96,165,250,0.8)"/>
+                    <path d="M14 2 L14 6 M14 22 L14 26 M2 14 L6 14 M22 14 L26 14" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
+                </svg>
+            </div>
+            <div>
+                <div id="brand-name">ROUTESENSE</div>
+                <div id="brand-sub">AI Evacuation Intelligence</div>
+            </div>
+        </div>
+        <div id="status-bar">
+            <span id="status-dot"></span>
+            <span id="status-text">INITIALIZING</span>
+        </div>
+    </header>
+
+    <!-- ── Map Container ────────────────────────────── -->
+    <div id="map"></div>
+
+    <!-- ── Map Hint ─────────────────────────────────── -->
+    <div id="map-hint">Click map to set <strong>origin</strong>, then <strong>destination</strong></div>
+
+    <!-- ── Legend ────────────────────────────────────── -->
+    <div id="legend" class="glass-panel">
+        <div class="legend-title">RISK LEVEL</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#34d399"></span>Low</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#fbbf24"></span>Medium</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>High</div>
+        <div class="legend-item" id="legend-flood" style="display:none"><span class="legend-dot" style="background:rgba(59,130,246,0.5);border:1px solid #3b82f6"></span>Flood Zone</div>
+        <div class="legend-sep"></div>
+        <div class="legend-item"><span class="legend-line" style="background:#60a5fa"></span>Normal</div>
+        <div class="legend-item"><span class="legend-line" style="background:#c084fc"></span>RouteSense</div>
+    </div>
+
+    <!-- ── Flood Simulation Panel ───────────────────── -->
+    <div id="flood-panel" class="glass-panel floating-panel">
+        <div class="panel-header" onclick="togglePanel('flood-panel')">
+            <span class="panel-icon">◉</span>
+            FLOOD SIMULATION
+            <span class="panel-toggle">▾</span>
+        </div>
+        <div class="panel-body">
+            <div class="field">
+                <label>Flood Intensity</label>
+                <input type="range" id="flood-intensity" min="0" max="1" step="0.05" value="0.5">
+                <div class="slider-labels"><span>Low</span><span id="intensity-val">0.50</span><span>High</span></div>
+            </div>
+            <div class="field">
+                <label>Water Level</label>
+                <input type="range" id="water-level" min="0" max="5" step="0.1" value="1.0">
+                <div class="slider-labels"><span>0 m</span><span id="water-val">1.0 m</span><span>5 m</span></div>
+            </div>
+            <div class="field">
+                <label>Flood Radius</label>
+                <input type="range" id="flood-radius" min="500" max="5000" step="100" value="2000">
+                <div class="slider-labels"><span>500m</span><span id="radius-val">2000m</span><span>5km</span></div>
+            </div>
+            <div class="field">
+                <p class="hint">Click the map to place flood center</p>
+            </div>
+            <div class="btn-row">
+                <button id="btn-simulate" class="btn btn-primary" onclick="simulateFlood()">Simulate Flood</button>
+                <button id="btn-reset-flood" class="btn btn-ghost" onclick="resetFlood()">Reset</button>
+            </div>
+            <p class="proto-note">Prototype simulation — not a hydrological model</p>
+        </div>
+    </div>
+
+    <!-- ── Routing Panel ────────────────────────────── -->
+    <div id="route-panel" class="glass-panel floating-panel">
+        <div class="panel-header" onclick="togglePanel('route-panel')">
+            <span class="panel-icon">→</span>
+            ROUTESENSE ROUTING
+            <span class="panel-toggle">▾</span>
+        </div>
+        <div class="panel-body">
+            <div class="field">
+                <label>Profile</label>
+                <div id="profile-selector">
+                    <button class="profile-btn active" data-profile="general" onclick="selectProfile('general')">General</button>
+                    <button class="profile-btn" data-profile="elderly" onclick="selectProfile('elderly')">Elderly</button>
+                    <button class="profile-btn" data-profile="emergency" onclick="selectProfile('emergency')">Emergency</button>
+                </div>
+            </div>
+            <div class="field" id="origin-field">
+                <label>Origin</label>
+                <div class="coord-display" id="origin-display">Click map or use default</div>
+            </div>
+            <div class="field" id="dest-field">
+                <label>Destination</label>
+                <div class="coord-display" id="dest-display">Click map or use default</div>
+            </div>
+            <div class="btn-row">
+                <button id="btn-route" class="btn btn-primary" onclick="findRoute()">FIND SAFER ROUTE</button>
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-ghost btn-sm" onclick="useDefaults()">Use Demo Points</button>
+                <button class="btn btn-ghost btn-sm" onclick="clearPoints()">Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Route Impact Panel (hidden until route is computed) ── -->
+    <div id="impact-panel" class="glass-panel floating-panel" style="display:none">
+        <div class="panel-header" onclick="togglePanel('impact-panel')">
+            <span class="panel-icon">◆</span>
+            ROUTE IMPACT
+            <span class="panel-toggle">▾</span>
+        </div>
+        <div class="panel-body">
+            <div class="metric-grid">
+                <div class="metric">
+                    <div class="metric-label">Distance</div>
+                    <div class="metric-value" id="metric-dist">—</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">High-Risk Segs</div>
+                    <div class="metric-value" id="metric-high">—</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Risk Reduction</div>
+                    <div class="metric-value highlight" id="metric-reduction">—</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Distance Change</div>
+                    <div class="metric-value" id="metric-dist-change">—</div>
+                </div>
+            </div>
+            <div id="route-status-msg" class="route-msg"></div>
+        </div>
+    </div>
+
+    <!-- ── Area Label ──────────────────────────────── -->
+    <div id="area-label" class="glass-panel">Thrissur Demonstration Area</div>
+
+    <!-- ── Prototype Badge ─────────────────────────── -->
+    <div id="proto-badge">PROTOTYPE</div>
+
+    <!-- ── Loading Overlay ─────────────────────────── -->
+    <div id="loading-overlay">
+        <div id="loading-content">
+            <div class="loader"></div>
+            <div id="loading-text">Loading RouteSense AI…</div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
