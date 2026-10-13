@@ -54,3 +54,20 @@ outputs/
 *.temp
 *.osm.pbf
 data/*routing_graph.pkl
+
+# Additional geospatial & large data formats
+*.gpkg
+*.vrt
+*.aux.xml
+*.pbf
+*.parquet
+*.feather
+*.geotiff
+*.nc
+*.dem
+
+# Cache & build
+.cache/
+node_modules/
+build/
+dist/
