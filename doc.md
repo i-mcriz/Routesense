@@ -469,37 +469,58 @@ flowchart TD
     D -- Yes --> F["Compute Proximity Factor: 1.0 - (d_flood / Radius)"]
     F --> G["Compute Elevation Factor: max(0, 1.0 - (Elevation / 500))"]
     G --> H["Calculate Flood Penalty: Proximity × Intensity × ElevFactor × WaterLevel"]
-    H --> I{"Penalty > 0.7?"}
-    I -- Yes --> J["Effective Risk = HIGH (2)"]
-    I -- No --> K{"Penalty > 0.3?"}
-    K -- Yes --> L["Effective Risk = max(Original, MEDIUM (1))"]
-    K -- No --> E
+    H --> I{"Penalty > 0.85 (Impassable Threshold)?"}
+    I -- Yes --> J["Mark Impassable (True) & Set routesense_cost = ∞"]
+    I -- No --> K{"Penalty > 0.7?"}
+    K -- Yes --> L["Effective Risk = HIGH (2)"]
+    K -- No --> M{"Penalty > 0.3?"}
+    M -- Yes --> N["Effective Risk = max(Original, MEDIUM (1))"]
+    M -- No --> E
 ```
 
-#### Mathematical Formulation
+#### Mathematical Formulation & Severe Hazard Exclusions
 
 For each edge $e = (u, v)$ with geographic midpoint $\text{mid}(e) = \left(\frac{\lambda_u+\lambda_v}{2}, \frac{\phi_u+\phi_v}{2}\right)$:
 
-1. **Distance to Flood Center**:
+1. **Distance to Flood Center (Circular Mode)**:
    $$d_{\text{flood}}(e) = \text{haversine}(\text{mid}(e), C_{\text{flood}})$$
 
 2. **Proximity Decay**:
    $$\text{Proximity}(e) = \max\left(0, 1.0 - \frac{d_{\text{flood}}(e)}{R_{\text{radius}}}\right)$$
 
 3. **Elevation Vulnerability Factor**:
-   Roads at sea level or in low valleys are more susceptible to water accumulation than elevated roads:
+   Roads at sea level or in low valleys are significantly more vulnerable:
    $$\text{ElevFactor}(e) = \max\left(0, 1.0 - \frac{h(e)}{500}\right)$$
 
 4. **Composite Flood Penalty**:
    $$\Phi(e) = \text{Proximity}(e) \times I_{\text{intensity}} \times \text{ElevFactor}(e) \times L_{\text{water}}$$
    Where $I_{\text{intensity}} \in [0, 1]$ and $L_{\text{water}} \in [0, 5]\text{ m}$.
 
-5. **Risk Escalation Rules**:
-   $$R_{\text{eff}}(e) = \begin{cases} 
-   2 \text{ (High Risk)}, & \text{if } \Phi(e) > 0.7 \\ 
-   \max(R(e), 1) \text{ (At least Medium Risk)}, & \text{if } 0.3 < \Phi(e) \le 0.7 \\ 
-   R(e) \text{ (Unchanged ML Prediction)}, & \text{if } \Phi(e) \le 0.3 
+5. **Polygon Inundation Penalty (Freehand Mode)**:
+   For user-drawn irregular disaster boundaries represented as a planar polygon $P$:
+   $$\Phi_{\text{poly}}(e) = \begin{cases}
+   \left(0.5 + 0.5 \times \frac{\text{dist}(\text{mid}(e), \partial P)}{d_{\max}}\right) \times I \times \text{ElevFactor}(e) \times L, & \text{if } \text{mid}(e) \in P \lor e \cap P \ne \emptyset \\
+   0, & \text{otherwise}
    \end{cases}$$
+
+6. **Impassable Road Designation & Subgraph Exclusion**:
+   Previously, even a high $5\times$ or $12\times$ multiplier on a short road segment could be chosen by Dijkstra if long detours were required, leading routes directly through flooded hazards. RouteSense addresses this with a configurable threshold:
+   $$\text{IMPASSABLE\_THRESHOLD} = 0.85$$
+
+   Edges exceeding this threshold are designated **impassable**:
+   $$\text{IsImpassable}(e) = \begin{cases} \text{True}, & \text{if } \Phi(e) > \text{IMPASSABLE\_THRESHOLD} \\ \text{False}, & \text{otherwise} \end{cases}$$
+
+   For RouteSense pathfinding, impassable edges are strictly excised from the search network by constructing a **passable subgraph view**:
+   $$G_{\text{passable}} = (V, \{e \in E \mid \neg \text{IsImpassable}(e)\})$$
+   $$\text{routesense\_cost}(e) = \begin{cases} \infty, & \text{if } \text{IsImpassable}(e) \\ d(e) \times M_{\text{profile}}(R_{\text{eff}}(e)) + \text{Penalties}_{\text{profile}}(e), & \text{otherwise} \end{cases}$$
+
+   If no path connects origin and destination on $G_{\text{passable}}$, RouteSense rejects the route with an explicit status:
+   `"No route satisfying the configured safety constraints is available"`
+   It never silently falls back to hazardous corridors.
+
+7. **Routing Cost Units & Objectives**:
+   - **Normal Shortest-Distance Route**: Minimizes pure geographical physical road distance $\sum d(e)$ in **meters ($m$)** on the unmodified base network $G_{\text{base}}$. It ignores flood state to serve as a ground-truth distance benchmark.
+   - **RouteSense Recommended Route**: Minimizes multi-criteria impedance $\sum \text{routesense\_cost}(e)$ in **risk-weighted meters** on $G_{\text{passable}}$.
 
 ### 4.7 Dual-Path Evaluation & Impact Metrics
 
@@ -520,7 +541,7 @@ For the standard demo points in Thrissur:
 | **Total Physical Distance** | 15.0 km | 16.2 km | **+1.2 km (+7.6%)** |
 | **High-Risk Segments** | 46 segments | 9 segments | **-37 segments avoided** |
 | **Net Risk Reduction** | — | — | **80.4% reduction in hazard exposure** |
-| **Visual Geometry** | Blue dashed line | Purple line with animated particles | Safely diverts around low-lying river corridors |
+| **Visual Geometry** | Sky-blue dashed line | Green casing outline with risk-colored segments & flowing particles | Safely diverts around low-lying river corridors |
 
 This demonstrates the core value proposition of RouteSense: **accepting a modest 7.6% increase in travel distance eliminates over 80% of hazardous road exposure**.
 
@@ -617,19 +638,35 @@ flowchart LR
   - `ROUTING FAILED` (Red)
 
 #### 2. Legend Panel (`#legend`)
-- Positioned at the top-left; details risk tier dot colors (Low, Medium, High, Flood Zone) and route line styles (Normal dashed blue vs. RouteSense purple).
+- Positioned at the top-left; details risk tier dot colors (Low `#34d399`, Medium `#fbbf24`, High `#ef4444`), Affected Roads (Red/Orange/Yellow), Flood Zone (translucent blue), Waterways (Cyan `#06b6d4`), RouteSense Recommended Route (Green casing outline with internal segment risk colors), and Normal Shortest Route (Sky-blue dashed line).
 
-#### 3. Flood Simulation Panel (`#flood-panel`)
+#### 3. Map Layers & Adaptive Prominence Panel (`#layer-panel`)
+- Located at top-left (`left: 170px, top: 60px`).
+- **Basemap Switcher**:
+  - `Street Map`: Default standard OpenStreetMap cartography (`https://tile.openstreetmap.org/{z}/{x}/{y}.png`).
+  - `Satellite`: Alternative ArcGIS World Imagery photorealistic satellite layer.
+- **Adaptive Focus States**:
+  - `BALANCED`: Normal balanced prominence across all layers.
+  - `ROUTE_FOCUS`: Accentuates the recommended route ($1.0$ opacity) and shortest path ($0.9$), while subduing background particles ($0.15$), affected roads ($0.40$), and flood zones ($0.20$).
+  - `FLOOD_ROAD_FOCUS`: Maximizes prominence of flood-affected roads ($1.0$ opacity) in red, orange, and yellow.
+  - `FLOOD_ZONE_FOCUS`: Highlights flood hazard polygons/circles ($0.85$ opacity) to evaluate geographic inundation footprint.
+  - `ENVIRONMENT_FOCUS`: Accentuates rivers and Kole drainage canals ($1.0$ opacity, cyan) for hydrological inspection.
+- **Layer Visibility Toggles**: Independent on/off checkboxes for Risk Particles, Affected Roads, Flood Zones, Rivers & Canals, RouteSense Route, and Shortest Route.
+
+#### 4. Flood Simulation Panel (`#flood-panel`)
 - Located at bottom-left with collapsible drawer mechanism (`togglePanel('flood-panel')`).
+- **Scenario Presets Dropdown**: Loads pre-calibrated historical and hydrological hazard presets (Puzhakkal River Overflow, Kole Wetland Basin Breach, Swaraj Round Core Flashflood, Kuriachira Dip Waterlogging).
+- **Flood Mode Selector**:
+  - `Circle Mode`: Traditional concentric circular flood simulation with adjustable radius ($500 - 5000\text{ m}$).
+  - `Draw Polygon`: Freehand drawing mode where users click the map to place vertices of an irregular hazard zone, with `Finish Polygon` and `Clear Polygon` controls.
 - Sliders:
   - **Flood Intensity**: Range $0.0 - 1.0$ (step 0.05).
   - **Water Level**: Range $0.0 - 5.0\text{ m}$ (step 0.1).
-  - **Flood Radius**: Range $500 - 5000\text{ m}$ (step 100).
 - Buttons:
-  - `Simulate Flood`: Sends updated flood parameters to the routing engine.
-  - `Reset`: Clears flood markers and restores baseline edge weights.
+  - `Simulate Flood`: Sends circular or polygon parameters to the routing engine.
+  - `Reset`: Clears flood markers, polygon vertices, and restores baseline conditions.
 
-#### 4. RouteSense Routing Panel (`#route-panel`)
+#### 5. RouteSense Routing Panel (`#route-panel`)
 - Located at bottom-right.
 - **Profile Selector**: Segmented toggle buttons for `General`, `Elderly`, and `Emergency`.
 - **Coordinate Readouts**: Displays snapped latitude/longitude coordinates for Origin and Destination.
@@ -638,38 +675,47 @@ flowchart LR
   - `Use Demo Points`: Automatically loads pre-configured coordinates for the Thrissur demo.
   - `Clear`: Removes route layers and resets waypoint state.
 
-#### 5. Route Impact Panel (`#impact-panel`)
-- Floats at top-right; hidden by default and displayed automatically once routing finishes.
+#### 6. Route Impact Panel (`#impact-panel`)
+- Floats at top-right; displayed automatically once routing finishes.
 - Grid metrics:
   - **Distance**: Baseline distance $\to$ Safe distance (km).
   - **High-Risk Segs**: Count of high-hazard segments traversed (e.g., $46 \to 9$).
   - **Risk Reduction**: Percentage hazard avoidance (highlighted in emerald green).
   - **Distance Change**: Percentage detour cost (e.g., $+7.6\%$).
-  - **Verdict Message**: Qualitative explanation of the trade-off.
+  - **Verdict Message**: Qualitative explanation of the trade-off or explicit no-route warning when hazards prevent safe travel.
 
-### 5.4 Dynamic Map Animations & Particle Flow Visualization
+### 5.4 Dynamic Map Animations & Layered Route Rendering
 
-1. **Origin & Destination Markers**:
-   - **Origin Pin**: Electric blue circular radar beacon with CSS keyframe pulse animation (`marker-pulse`) cycling box-shadow glow radii between 12px and 24px.
+1. **Layered Route Visualization (Requirement 3)**:
+   - **Layer 1 (Underneath)**: A vibrant emerald green polyline (`#16a34a`, weight: 8, opacity: 0.70, round caps/joins) serving as a distinct casing outline identifying RouteSense route selection.
+   - **Layer 2 (Middle)**: Individual road segment LineStrings colored strictly by their effective risk tier (`#34d399` Low, `#fbbf24` Medium, `#ef4444` High, weight: 4, opacity: 0.95), preserving segment-level hazard awareness.
+   - **Layer 3 (Top)**: Animated green/emerald particles (`#10b981`) traveling along the path.
+   - **Normal Shortest Route**: Rendered alongside as a sky-blue dashed line (`#60a5fa`, weight: 3.5, dashArray: '8 6', opacity: 0.80).
+
+2. **Affected Roads Network Visualization (Requirement 2)**:
+   - Rendered in a dedicated `affectedRoadsLayer` whenever a circular or polygon flood is simulated:
+     - **Red (`#ef4444`)**: Segments designated Impassable ($\Phi > 0.85$) or High Effective Risk ($\Phi > 0.7$).
+     - **Orange (`#f97316`)**: Segments escalated to Medium Effective Risk ($\Phi > 0.3$).
+     - **Yellow (`#fbbf24`)**: Segments with minor flood penalties ($\Phi \le 0.3$).
+   - Interactive popups display the segment's original risk, effective risk, and calculated flood penalty.
+
+3. **Rivers & Environmental Features Layer**:
+   - Vector geometries of Thrissur's hydrological network rendered in cyan (`#06b6d4`, weight: 3.5 for rivers, dashed for canals) sourced from `/api/rivers`.
+
+4. **Origin & Destination Markers**:
+   - **Origin Pin**: Electric blue circular radar beacon with CSS keyframe pulse animation (`marker-pulse`).
    - **Destination Pin**: Neon pink bullseye icon with high-contrast dual rings.
 
-2. **Concentric Flood Inundation Wave**:
-   - When a flood epicenter is placed, `setFloodCenter()` generates three concentric circles with radii scaled at $1.0\times$, $0.75\times$, and $0.50\times$.
-   - A timer loop (`setInterval` at 50ms) modulates radial scale ($1 \pm 0.08 \sin(t)$) and opacity ($0.15 \pm 0.10 \sin(1.5t)$), simulating undulating flood water.
-
-3. **Animated Traveling Route Particles**:
-   - When the RouteSense path is rendered, `animateRouteParticles(coords)` instantiates 8 glowing circular markers (`#c084fc` fill, `#e9d5ff` border) distributed evenly along the path.
-   - A high-frequency animation loop (40ms) updates particle positions along the path coordinates:
-     $$p.\text{progress} \leftarrow (p.\text{progress} + 0.003) \pmod{1}$$
-   - Linearly interpolates coordinates between adjacent vertices, producing the visual effect of vehicles or evacuees flowing safely along the evacuation corridor toward safety.
+5. **Concentric Flood Inundation Wave**:
+   - In circle mode, 3 concentric circles scale and breathe via timer loop ($50\text{ ms}$).
 
 ### 5.5 State Management & Interaction Lifecycle
 
-`frontend/app.js` implements a finite state machine for map click interactions:
-
-- **State `origin`**: Clicking the map records Origin coordinates, places the blue pulsing marker, updates the readout, and advances to state `dest`.
-- **State `dest`**: Clicking the map records Destination coordinates, places the pink bullseye marker, hides the instructional banner, and advances to idle.
-- **Shift+Click (Anytime)**: Bypasses waypoint selection to place or relocate the flood epicenter circle.
+`frontend/app.js` implements a clean interaction state machine:
+- **State `origin`**: Clicking the map sets Origin coordinates.
+- **State `dest`**: Clicking the map sets Destination coordinates.
+- **State `polygon`**: When Draw Polygon mode is active, clicking map appends vertices to the flood polygon.
+- **Shift+Click (Anytime)**: Instantly places or relocates circular flood center.
 
 ---
 
@@ -678,50 +724,14 @@ flowchart LR
 ### `GET /api/health`
 Returns system status, active graph dimensions, and geographic coverage.
 
-**Response (`200 OK`)**:
-```json
-{
-  "status": "ok",
-  "nodes": 57611,
-  "edges": 60567,
-  "study_area": "Thrissur, Kerala",
-  "road_segments": 10153,
-  "prototype": true
-}
-```
-
----
-
 ### `GET /api/risk-map`
 Returns the lightweight GeoJSON feature collection used for particle-field risk rendering.
 
-**Response (`200 OK`)**:
-```json
-{
-  "type": "FeatureCollection",
-  "features": [
-    {
-      "type": "Feature",
-      "geometry": {
-        "type": "LineString",
-        "coordinates": [[76.2144, 10.5276], [76.2150, 10.5281]]
-      },
-      "properties": {
-        "osm_id": "12345678",
-        "highway": "secondary",
-        "predicted_risk": 1,
-        "risk_label": "Medium",
-        "elevation": 14.5,
-        "slope": 2.1,
-        "rainfall": 2150.0,
-        "dist_water": 320.0
-      }
-    }
-  ]
-}
-```
+### `GET /api/rivers`
+Serves vector geometries of Thrissur's hydrological features (`data/thrissur_waterways_v1.geojson`) for the environmental map layer.
 
----
+### `GET /api/scenarios`
+Returns pre-configured synthetic flood hazard scenario parameters (`data/synthetic_flood_scenarios_v1.json`).
 
 ### `POST /api/route`
 Computes the baseline shortest path and the RouteSense risk-weighted evacuation route.
@@ -736,8 +746,9 @@ Computes the baseline shortest path and the RouteSense risk-weighted evacuation 
     "active": true,
     "center": [76.215, 10.530],
     "radius": 2000,
-    "intensity": 0.5,
-    "water_level": 1.0
+    "intensity": 0.8,
+    "water_level": 2.0,
+    "polygon": null
   }
 }
 ```
@@ -749,89 +760,90 @@ Computes the baseline shortest path and the RouteSense risk-weighted evacuation 
   "destination": [76.2500925, 10.5696931],
   "profile": "general",
   "normal": {
-    "distance": 15024.12,
+    "distance": 15009.88,
     "segments": 182,
     "risk_counts": {"0": 84, "1": 52, "2": 46},
-    "high_pct": 25.3,
     "coordinates": [[76.1798, 10.4901], [76.1802, 10.4905]],
     "geojson": {"type": "FeatureCollection", "features": []}
   },
   "routesense": {
-    "distance": 16168.45,
+    "distance": 16150.49,
     "segments": 195,
     "risk_counts": {"0": 142, "1": 44, "2": 9},
-    "high_pct": 4.6,
     "coordinates": [[76.1798, 10.4901], [76.1810, 10.4912]],
     "geojson": {"type": "FeatureCollection", "features": []}
   },
   "comparison": {
-    "distance_diff": 1144.33,
+    "distance_diff": 1140.61,
     "distance_pct": 7.6,
     "high_risk_avoided": 37,
     "risk_reduction_pct": 80.4,
     "routes_differ": true
   },
-  "affected_roads_count": 412,
-  "flood_active": true
+  "affected_roads": [
+    {
+      "coordinates": [[76.214, 10.529], [76.215, 10.530]],
+      "original_risk": 1,
+      "effective_risk": 2,
+      "flood_penalty": 0.88,
+      "impassable": true
+    }
+  ],
+  "affected_roads_count": 5923,
+  "flood_active": true,
+  "route_validated": true,
+  "routing_objective": {
+    "normal": "Minimizes total distance (meters) on the base road network, ignoring flood state.",
+    "routesense": "Minimizes risk-weighted distance (risk-weighted meters). Roads with flood_penalty > 0.85 are excluded as impassable."
+  }
 }
 ```
 
----
-
 ### `POST /api/simulate-flood`
-Computes road segments affected by a flood configuration without recalculating an active route.
+Computes road segments affected by circular or polygon flood configurations.
 
 **Request Payload**:
 ```json
 {
   "center": [76.215, 10.530],
   "radius": 2000,
-  "intensity": 0.5,
-  "water_level": 1.0
-}
-```
-
-**Response (`200 OK`)**:
-```json
-{
-  "affected_count": 412,
-  "affected_roads": [
-    {
-      "coordinates": [[76.214, 10.529], [76.215, 10.530]],
-      "original_risk": 1,
-      "effective_risk": 2
-    }
-  ],
-  "center": [76.215, 10.530],
-  "radius": 2000
+  "intensity": 0.8,
+  "water_level": 2.0,
+  "polygon": null
 }
 ```
 
 ---
 
-## 7. Setup, Execution, and Verification
+## 7. Setup, Automated Testing, and Verification
 
 ### Prerequisites
 - Python 3.10 or higher
-- Standard pip environment
+- Standard pip packages: `flask`, `flask-cors`, `geopandas`, `networkx`, `shapely`, `pandas`
 
-### Required Dependencies
+### Automated Regression Test Suite (`tests/test_routing.py`)
+A comprehensive automated test suite consisting of **32 test cases** covers all system requirements:
+- **Routing Engine Tests (10 tests)**: Verifies shortest-distance minimization, non-corruption by flood risk, impassable road avoidance, moderate penalty application, no-path status reporting, geometry alignment, origin/destination snapping, routing profiles, and distance accumulation.
+- **Disaster Simulation Tests (8 tests)**: Verifies localized risk changes, unaffected road invariance, monotonic response to severity, effective risk divergence from baseline, deterministic reproducibility, circular mode, and polygon mode.
+- **Dataset Tests (7 tests)**: Verifies node and road identifier preservation, attribute completeness, reproducible generator execution, synthetic field labeling, provenance registry validity, and topological stability.
+- **Visualization Contract Tests (7 tests)**: Verifies affected road tiers, green outline structure, baseline route differentiation, rivers endpoint, scenarios endpoint, static file completeness, and focus states.
+
+Execute the test suite from the project root:
 ```bash
-pip install flask flask-cors geopandas networkx shapely scikit-learn pandas numpy matplotlib seaborn joblib
+python tests/test_routing.py
+```
+**Test Results**:
+```
+Ran 32 tests in 26.212s
+OK
 ```
 
 ### Launching the Application
-Execute the Flask server from the project root:
-
+Execute the Flask server:
 ```bash
 python backend/app.py
 ```
-
-Startup sequence:
-1. `outputs/routesense_road_risk.geojson` is loaded into memory (~30s for 496,140 statewide features).
-2. Spatial subsetting isolates the Thrissur study area (10,153 features).
-3. NetworkX routing graph `G_BASE` is initialized (57,611 nodes and 60,567 edges).
-4. Web server starts on `http://localhost:5000`.
+Open **`http://localhost:5000`** in any web browser.
 
 ### Standard Verification Workflow
 1. Navigate to **`http://localhost:5000`** in any modern web browser.

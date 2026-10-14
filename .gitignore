@@ -70,4 +70,6 @@ data/*routing_graph.pkl
 .cache/
 node_modules/
 build/
-dist/
+dist/
+.freebuff/
+data/*.pkl

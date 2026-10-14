@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "type": "synthetic_scenario_parameters",
+    "generator": "routesense_deterministic_engine",
+    "random_seed": 42,
+    "units": {
+      "rainfall_24h": "millimeters (mm)",
+      "peak_intensity": "mm/hour",
+      "runoff_coefficient": "dimensionless (0.0 - 1.0)",
+      "antecedent_moisture_index": "dimensionless (0.0 - 1.0)"
+    },
+    "provenance_note": "Explicitly synthetic scenarios modeled after historical Kerala monsoon dynamics for evaluation."
+  },
+  "scenarios": [
+    {
+      "scenario_id": "SCN_RAIN_NORMAL_MONSOON",
+      "name": "Standard Active Southwest Monsoon",
+      "rainfall_24h_mm": 65.0,
+      "peak_intensity_mm_h": 12.0,
+      "runoff_coefficient": 0.35,
+      "antecedent_moisture_index": 0.4,
+      "expected_impact": "Localized minor waterlogging in poorly drained urban dips; primary roads normal."
+    },
+    {
+      "scenario_id": "SCN_RAIN_HEAVY_DOWNPOUR",
+      "name": "Heavy Monsoon Depression (Orange Alert)",
+      "rainfall_24h_mm": 165.0,
+      "peak_intensity_mm_h": 28.0,
+      "runoff_coefficient": 0.65,
+      "antecedent_moisture_index": 0.7,
+      "expected_impact": "Puzhakkal lowlands inundated, Kole wetland canal bank overflow, tertiary roads affected."
+    },
+    {
+      "scenario_id": "SCN_RAIN_EXTREME_2018_ANALOG",
+      "name": "Centenary Extreme Rainfall Event (2018 Analog / Red Alert)",
+      "rainfall_24h_mm": 340.0,
+      "peak_intensity_mm_h": 55.0,
+      "runoff_coefficient": 0.88,
+      "antecedent_moisture_index": 0.95,
+      "expected_impact": "Severe district-wide inundation; low-elevation corridors impassable; emergency routing mandatory."
+    },
+    {
+      "scenario_id": "SCN_RAIN_URBAN_CLOUDBURST",
+      "name": "Short-Duration High-Intensity Urban Cloudburst",
+      "rainfall_24h_mm": 110.0,
+      "peak_intensity_mm_h": 75.0,
+      "runoff_coefficient": 0.8,
+      "antecedent_moisture_index": 0.5,
+      "expected_impact": "Rapid flash waterlogging in Thrissur Swaraj Round and commercial core; high slope runoff."
+    }
+  ]
+}

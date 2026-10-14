@@ -1,0 +1,267 @@
+{
+  "type": "FeatureCollection",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            76.242,
+            10.582
+          ],
+          [
+            76.23,
+            10.571
+          ],
+          [
+            76.216,
+            10.558
+          ],
+          [
+            76.202,
+            10.55
+          ],
+          [
+            76.188,
+            10.543
+          ],
+          [
+            76.172,
+            10.538
+          ],
+          [
+            76.155,
+            10.534
+          ]
+        ]
+      },
+      "properties": {
+        "waterway_id": "WW_PUZHAKKAL_MAIN",
+        "name": "Puzhakkal River Main Channel",
+        "type": "river",
+        "flow_direction": "westward",
+        "provenance": "derived_thrissur_hydrology_model_v1"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            76.21,
+            10.605
+          ],
+          [
+            76.207,
+            10.588
+          ],
+          [
+            76.204,
+            10.57
+          ],
+          [
+            76.202,
+            10.55
+          ]
+        ]
+      },
+      "properties": {
+        "waterway_id": "WW_PUZHAKKAL_NORTH_TRIB",
+        "name": "Puzhakkal North Tributary",
+        "type": "river_tributary",
+        "flow_direction": "southward",
+        "provenance": "derived_thrissur_hydrology_model_v1"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            76.172,
+            10.538
+          ],
+          [
+            76.168,
+            10.522
+          ],
+          [
+            76.165,
+            10.505
+          ],
+          [
+            76.162,
+            10.485
+          ],
+          [
+            76.16,
+            10.465
+          ]
+        ]
+      },
+      "properties": {
+        "waterway_id": "WW_KOLE_CANAL_WEST_MAIN",
+        "name": "Thrissur Kole Wetland Main Drainage Canal",
+        "type": "drainage_canal",
+        "flow_direction": "southward",
+        "provenance": "derived_thrissur_hydrology_model_v1"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            76.195,
+            10.525
+          ],
+          [
+            76.182,
+            10.523
+          ],
+          [
+            76.168,
+            10.522
+          ]
+        ]
+      },
+      "properties": {
+        "waterway_id": "WW_KOLE_CROSS_CANAL_1",
+        "name": "Kole Lowland Connector Canal North",
+        "type": "drainage_canal",
+        "flow_direction": "westward",
+        "provenance": "derived_thrissur_hydrology_model_v1"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            76.205,
+            10.495
+          ],
+          [
+            76.185,
+            10.492
+          ],
+          [
+            76.165,
+            10.488
+          ]
+        ]
+      },
+      "properties": {
+        "waterway_id": "WW_KOLE_CROSS_CANAL_2",
+        "name": "Kole Lowland Connector Canal South",
+        "type": "drainage_canal",
+        "flow_direction": "westward",
+        "provenance": "derived_thrissur_hydrology_model_v1"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            76.275,
+            10.468
+          ],
+          [
+            76.255,
+            10.462
+          ],
+          [
+            76.23,
+            10.458
+          ],
+          [
+            76.2,
+            10.455
+          ],
+          [
+            76.17,
+            10.452
+          ]
+        ]
+      },
+      "properties": {
+        "waterway_id": "WW_MANALI_REACH",
+        "name": "Manali River Southern Reach",
+        "type": "river",
+        "flow_direction": "westward",
+        "provenance": "derived_thrissur_hydrology_model_v1"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            76.218,
+            10.531
+          ],
+          [
+            76.21,
+            10.526
+          ],
+          [
+            76.198,
+            10.522
+          ]
+        ]
+      },
+      "properties": {
+        "waterway_id": "WW_VADAKKECHIRA_OUTLET",
+        "name": "Vadakkechira Urban Overflow Stream",
+        "type": "urban_channel",
+        "flow_direction": "south-westward",
+        "provenance": "derived_thrissur_hydrology_model_v1"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            76.28,
+            10.54
+          ],
+          [
+            76.262,
+            10.536
+          ],
+          [
+            76.245,
+            10.532
+          ],
+          [
+            76.232,
+            10.53
+          ]
+        ]
+      },
+      "properties": {
+        "waterway_id": "WW_EASTERN_IRRIGATION",
+        "name": "Eastern Irrigation Feeder Canal",
+        "type": "canal",
+        "flow_direction": "westward",
+        "provenance": "derived_thrissur_hydrology_model_v1"
+      }
+    }
+  ]
+}

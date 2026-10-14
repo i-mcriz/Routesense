@@ -95,6 +95,16 @@ html, body {
 #map {
     position: fixed; inset: 0;
     z-index: 1;
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
+}
+
+/* GPU Hardware Acceleration for Map Canvas & Tiles */
+.leaflet-tile-container, canvas.leaflet-zoom-animated, .leaflet-pane {
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
 }
 .leaflet-control-zoom { display: none !important; }
 .leaflet-control-attribution {
@@ -445,16 +455,495 @@ input[type="range"]::-webkit-slider-thumb:hover {
     border-radius: 50%;
 }
 
+/* ── Layer Controls & Adaptive Focus Panel ─────────────── */
+
+#layer-panel {
+    top: 60px;
+    left: 170px;
+    width: 250px;
+}
+
+.focus-btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.focus-btn {
+    flex: 1 1 calc(50% - 4px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--text-dim);
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    padding: 6px 4px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+}
+
+.focus-btn:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    color: var(--text);
+}
+
+.focus-btn.active {
+    background: rgba(96, 165, 250, 0.15);
+    border-color: rgba(96, 165, 250, 0.4);
+    color: var(--accent);
+}
+
+.focus-btn.full-width {
+    flex: 1 1 100%;
+}
+
+.layer-toggle-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.layer-toggle-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 9px;
+    color: var(--text-dim);
+    padding: 3px 0;
+}
+
+.layer-toggle-item label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 9px;
+    color: var(--text-dim);
+}
+
+.layer-toggle-item input[type="checkbox"] {
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.basemap-switch {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.basemap-btn {
+    flex: 1;
+    font-size: 9px;
+    padding: 4px 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-dim);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.basemap-btn.active {
+    background: rgba(96, 165, 250, 0.15);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* ── Mode Switcher ─────────────────────────────────────── */
+
+.mode-switch-group {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.mode-switch-btn {
+    flex: 1;
+    font-size: 9px;
+    font-weight: 500;
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-dim);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+}
+
+.mode-switch-btn.active {
+    background: rgba(59, 130, 246, 0.18);
+    border-color: rgba(59, 130, 246, 0.45);
+    color: #93c5fd;
+}
+
+.scenario-select {
+    width: 100%;
+    background: rgba(15, 15, 25, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text);
+    font-size: 9px;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    outline: none;
+    margin-bottom: 8px;
+}
+
+.scenario-select option {
+    background: #0f0f19;
+    color: #e2e8f0;
+}
+
+/* ── Legend Compound Outlines ──────────────────────────── */
+
+.legend-outline-line {
+    width: 20px;
+    height: 6px;
+    background: #16a34a;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 1px;
+    flex-shrink: 0;
+}
+
+.legend-outline-inner {
+    width: 100%;
+    height: 2px;
+    background: #fbbf24;
+    border-radius: 1px;
+}
+
+.legend-dashed-line {
+    width: 20px;
+    height: 3px;
+    border-top: 2px dashed #60a5fa;
+    flex-shrink: 0;
+}
+
 /* ── Scrollbar ─────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 
 /* ── Responsive ────────────────────────────────────────── */
+@media (max-width: 900px) {
+    #layer-panel { left: 16px; top: 180px; width: 220px; }
+}
+
 @media (max-width: 700px) {
     .floating-panel { width: 220px; }
     #flood-panel { left: 8px; bottom: 12px; }
     #route-panel { right: 8px; bottom: 12px; }
     #impact-panel { right: 8px; top: 56px; width: 210px; }
     #legend { top: 56px; left: 8px; }
+    #layer-panel { display: none; }
 }
+
+/* ── Live Mobile Connect & Action Enhancements ─────────── */
+
+.mobile-connect-btn {
+    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    color: #38bdf8;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(8px);
+}
+.mobile-connect-btn:hover {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: #38bdf8;
+    transform: translateY(-1px);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+}
+
+.btn-safe-spot {
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid #34d399 !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.5px;
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    margin-top: 6px;
+    transition: all 0.2s ease;
+}
+.btn-safe-spot:hover {
+    background: linear-gradient(135deg, #047857 0%, #059669 100%) !important;
+    box-shadow: 0 0 18px rgba(16, 185, 129, 0.6);
+    transform: translateY(-1px);
+}
+
+.btn-gps-locate {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 10px;
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    color: #60a5fa;
+    cursor: pointer;
+    margin-top: 4px;
+    transition: all 0.15s ease;
+}
+.btn-gps-locate:hover {
+    background: rgba(59, 130, 246, 0.3);
+    border-color: #60a5fa;
+}
+
+/* Hazard Alert Banner */
+.hazard-alert-banner {
+    position: fixed;
+    top: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 18px;
+    background: rgba(220, 38, 38, 0.92);
+    border: 1px solid #ef4444;
+    border-radius: 10px;
+    color: #ffffff;
+    box-shadow: 0 8px 32px rgba(220, 38, 38, 0.5);
+    backdrop-filter: blur(12px);
+    animation: alertSlideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1), alertPulse 2s infinite;
+    max-width: 90vw;
+}
+@keyframes alertSlideDown {
+    from { transform: translate(-50%, -20px); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
+}
+@keyframes alertPulse {
+    0%, 100% { box-shadow: 0 8px 32px rgba(220, 38, 38, 0.5); }
+    50% { box-shadow: 0 8px 45px rgba(239, 68, 68, 0.85); }
+}
+.alert-icon { font-size: 20px; }
+.alert-title { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; }
+.alert-desc { font-size: 11px; opacity: 0.92; }
+.alert-close {
+    background: none;
+    border: none;
+    color: #ffffff;
+    font-size: 16px;
+    cursor: pointer;
+    opacity: 0.8;
+    padding: 2px 6px;
+}
+.alert-close:hover { opacity: 1; }
+
+/* Inundation ETA Card */
+.inundation-eta-card {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.eta-title {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    color: #94a3b8;
+    text-transform: uppercase;
+}
+.eta-value {
+    font-size: 15px;
+    font-weight: 700;
+    font-family: var(--mono);
+    color: #f87171;
+}
+.eta-urgency {
+    font-size: 9px;
+    font-weight: 700;
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 4px;
+    align-self: flex-start;
+    margin-top: 2px;
+}
+.eta-urgency.critical { background: #dc2626; color: #fff; }
+.eta-urgency.high { background: #ea580c; color: #fff; }
+.eta-urgency.moderate { background: #d97706; color: #fff; }
+.eta-urgency.low { background: #16a34a; color: #fff; }
+
+/* Mobile Modal */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(6px);
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+.modal-card {
+    background: #0f172a;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: 16px;
+    padding: 22px;
+    max-width: 420px;
+    width: 100%;
+    color: #f1f5f9;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+.modal-header h3 { font-size: 15px; font-weight: 700; color: #38bdf8; }
+.modal-close {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 18px;
+    cursor: pointer;
+}
+.modal-close:hover { color: #fff; }
+.modal-body {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #cbd5e1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.qr-container {
+    display: flex;
+    justify-content: center;
+    padding: 12px;
+    background: #ffffff;
+    border-radius: 12px;
+    margin: 6px 0;
+}
+.qr-container img {
+    width: 180px;
+    height: 180px;
+    display: block;
+}
+.mobile-url-box {
+    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 8px 12px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.url-label { font-size: 10px; color: #94a3b8; }
+.url-text { font-family: var(--mono); font-size: 13px; color: #38bdf8; font-weight: 600; text-decoration: none; word-break: break-all; }
+.modal-hint { font-size: 10px; color: #94a3b8; font-style: italic; }
+
+/* Pulsing User GPS Marker */
+.user-gps-pulse {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #0284c7;
+    border: 3px solid #ffffff;
+    box-shadow: 0 0 0 rgba(2, 132, 199, 0.6);
+    animation: userPulse 1.8s infinite;
+}
+@keyframes userPulse {
+    0% { box-shadow: 0 0 0 0 rgba(2, 132, 199, 0.8); }
+    70% { box-shadow: 0 0 0 16px rgba(2, 132, 199, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(2, 132, 199, 0); }
+}
+
+/* ── Custom Flood Zone Drawing & Management ─────────────── */
+.drawing-cursor {
+    cursor: crosshair !important;
+}
+
+.btn-xs {
+    padding: 2px 7px;
+    font-size: 8.5px;
+    border-radius: var(--radius-sm);
+}
+
+.danger-text {
+    color: #f87171 !important;
+    border-color: rgba(239, 68, 68, 0.3) !important;
+}
+.danger-text:hover {
+    background: rgba(239, 68, 68, 0.15) !important;
+    border-color: #ef4444 !important;
+}
+
+.intensity-badge {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.badge-zero {
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.badge-low {
+    background: rgba(52, 211, 153, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.badge-moderate {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.badge-heavy {
+    background: rgba(249, 115, 22, 0.18);
+    color: #fb923c;
+    border: 1px solid rgba(249, 115, 22, 0.35);
+}
+
+.badge-extreme {
+    background: rgba(239, 68, 68, 0.22);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.45);
+}
+
+.zone-active-indicator {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #38bdf8;
+    box-shadow: 0 0 6px #38bdf8;
+    margin-right: 4px;
+}
+
+

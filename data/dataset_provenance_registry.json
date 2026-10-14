@@ -1,0 +1,57 @@
+{
+  "dataset_registry": {
+    "kerala_roads.geojson": {
+      "type": "observed",
+      "source": "OpenStreetMap Kerala extract",
+      "crs": "EPSG:4326",
+      "description": "Base road network geometries and OSM attributes."
+    },
+    "Copernicus_DEM_COG_10_*.tif": {
+      "type": "observed",
+      "source": "Copernicus GLO-30 Digital Elevation Model",
+      "crs": "EPSG:4326",
+      "description": "Elevation in meters above sea level."
+    },
+    "thrissur_routing_graph.pkl": {
+      "type": "derived",
+      "source": "Constructed from OSM roads and DEM slope/elevation",
+      "description": "NetworkX graph for Thrissur road network."
+    },
+    "routesense_road_risk.geojson": {
+      "type": "derived",
+      "source": "Trained ML model prediction on road environmental features",
+      "description": "Baseline road risk classifications (0=Low, 1=Medium, 2=High)."
+    },
+    "thrissur_waterways_v1.geojson": {
+      "type": "derived",
+      "source": "Thrissur district river & canal hydrology network (Puzhakkal, Kole, Manali)",
+      "crs": "EPSG:4326",
+      "description": "Vector geometries of primary river channels and Kole wetland drainage canals."
+    },
+    "thrissur_road_water_proximity_v1.csv": {
+      "type": "derived",
+      "source": "Spatial distance calculation from roads to thrissur_waterways_v1",
+      "description": "Proximity of road segments to nearest waterways."
+    },
+    "synthetic_rainfall_scenarios_v1.json": {
+      "type": "synthetic",
+      "source": "Calibrated parametric monsoon rainfall scenarios",
+      "description": "Scenario definitions for rainfall intensity and runoff."
+    },
+    "synthetic_flood_scenarios_v1.json": {
+      "type": "synthetic",
+      "source": "Parametric flood hazard zones in Thrissur subregions",
+      "description": "Coordinates, radius, intensity, and water level for hazard evaluation."
+    },
+    "synthetic_road_scenario_risk_v1.csv": {
+      "type": "synthetic",
+      "source": "Deterministic evaluation of road segments under synthetic flood scenarios",
+      "description": "Effective risk, flood penalties, and impassable designations."
+    }
+  },
+  "limitations": [
+    "Real-time hydrological river discharge telemetry data was unavailable from local authorities.",
+    "Subterranean municipal stormwater pipe GIS records were not available in open datasets.",
+    "Synthetic rainfall parameters are deterministic simulation models, not live rain gauge telemetry."
+  ]
+}

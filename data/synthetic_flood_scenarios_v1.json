@@ -1,0 +1,62 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "type": "synthetic_flood_hazard_parameters",
+    "generator": "routesense_deterministic_engine",
+    "provenance_note": "Calibrated spatial hazard scenarios covering key geographic subregions of Thrissur."
+  },
+  "scenarios": [
+    {
+      "scenario_id": "SCN_FLOOD_PUZHAKKAL_LOWLAND",
+      "name": "Puzhakkal Lowland River Overflow",
+      "center": [
+        76.185,
+        10.535
+      ],
+      "radius_meters": 2200,
+      "intensity": 0.75,
+      "water_level_meters": 2.2,
+      "affected_region_description": "Puzhakkal, Ayyanthole north, Kole agricultural periphery",
+      "primary_threat": "River overtopping and standing flood water on Guruvayur road corridor"
+    },
+    {
+      "scenario_id": "SCN_FLOOD_KOLE_BREACH",
+      "name": "Southern Kole Wetland Embankment Inundation",
+      "center": [
+        76.175,
+        10.495
+      ],
+      "radius_meters": 2800,
+      "intensity": 0.85,
+      "water_level_meters": 3.0,
+      "affected_region_description": "Arimpur, Manalur, southern Kole agricultural basin",
+      "primary_threat": "Deep inundation (>2.5m) cutting off southwestern escape routes"
+    },
+    {
+      "scenario_id": "SCN_FLOOD_SWARAJ_ROUND_FLASH",
+      "name": "Central Thrissur Urban Core Drainage Surcharge",
+      "center": [
+        76.2144,
+        10.5276
+      ],
+      "radius_meters": 1200,
+      "intensity": 0.6,
+      "water_level_meters": 1.4,
+      "affected_region_description": "Swaraj Round, Kuruppam Road, High Road commercial district",
+      "primary_threat": "Surface flash flooding and traffic gridlock; impassable for low-clearance vehicles"
+    },
+    {
+      "scenario_id": "SCN_FLOOD_KURIACHIRA_INUNDATION",
+      "name": "Kuriachira - Ollur Low-Lying Corridor Waterlogging",
+      "center": [
+        76.225,
+        10.505
+      ],
+      "radius_meters": 1600,
+      "intensity": 0.7,
+      "water_level_meters": 1.8,
+      "affected_region_description": "Kuriachira, Nehru Park south, Ollur railway crossing dip",
+      "primary_threat": "Railway underpass flooding and arterial road constriction"
+    }
+  ]
+}
