@@ -26,19 +26,23 @@ from flask_cors import CORS
 
 NODE_TREE = None
 NODE_ARRAY = None
+ROUTABLE_TREE = None
+ROUTABLE_NODE_LIST = []
 EDGE_LIST = []
 EDGE_MIDS = None
 
 # ── Configuration ──────────────────────────────────────────────
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 GEOJSON_PATH = os.path.join(BASE_DIR, 'outputs', 'routesense_road_risk.geojson')
-CACHE_PATH = os.path.join(BASE_DIR, 'data', 'thrissur_app_cache.pkl')
+REPAIRED_CACHE_PATH = os.path.join(BASE_DIR, 'data', 'repaired', 'thrissur_app_cache_repaired.pkl')
+ORIGINAL_CACHE_PATH = os.path.join(BASE_DIR, 'data', 'thrissur_app_cache.pkl')
+CACHE_PATH = os.environ.get('ROUTESENSE_CACHE', REPAIRED_CACHE_PATH if os.path.exists(REPAIRED_CACHE_PATH) else ORIGINAL_CACHE_PATH)
 FRONTEND_DIR = os.path.join(BASE_DIR, 'frontend')
 
-# Thrissur study area bounding box
+# Thrissur study area bounding box (Complete study area covering all 17,335 roads)
 STUDY_BBOX = {
-    'min_lon': 76.17, 'max_lon': 76.26,
-    'min_lat': 10.48, 'max_lat': 10.58
+    'min_lon': 76.15, 'max_lon': 76.28,
+    'min_lat': 10.45, 'max_lat': 10.61
 }
 
 # Configurable flood severity thresholds
@@ -48,19 +52,26 @@ IMPASSABLE_THRESHOLD = 0.85
 # Default routing profiles
 PROFILES = {
     'general': {
-        'low': 1.0, 'medium': 2.0, 'high': 5.0,
+        'low': 1.0, 'medium': 1.3, 'high': 2.5,
         'slope_penalty': 0.0,
         'avoid_steps': False,
         'avoid_footway': False
     },
+    'wheelchair': {
+        'low': 1.0, 'medium': 1.5, 'high': 3.0,
+        'slope_penalty': 1.0,
+        'max_slope': 8.0,
+        'avoid_steps': True,
+        'avoid_footway': False
+    },
     'elderly': {
-        'low': 1.0, 'medium': 3.0, 'high': 8.0,
+        'low': 1.0, 'medium': 1.5, 'high': 3.0,
         'slope_penalty': 0.5,
         'avoid_steps': True,
         'avoid_footway': True
     },
     'emergency': {
-        'low': 1.0, 'medium': 4.0, 'high': 12.0,
+        'low': 1.0, 'medium': 2.0, 'high': 5.0,
         'slope_penalty': 0.0,
         'avoid_steps': False,
         'avoid_footway': False
@@ -208,11 +219,18 @@ def haversine(a, b):
 
 def nearest_node(G, point, node_index=None):
     """Find the nearest graph node to a (lon, lat) point in <0.05ms using KD-Tree."""
-    if NODE_TREE is not None:
-        pt = np.array([float(point[0]), float(point[1])], dtype=np.float64)
-        _, idx = NODE_TREE.query(pt)
-        node = NODE_LIST[idx]
-        return node, haversine(pt, node)
+    pt = np.array([float(point[0]), float(point[1])], dtype=np.float64)
+
+    # If caller did not provide custom subset, prioritize the routable main component
+    if node_index is None:
+        if ROUTABLE_TREE is not None and ROUTABLE_NODE_LIST:
+            _, idx = ROUTABLE_TREE.query(pt)
+            node = ROUTABLE_NODE_LIST[idx]
+            return node, haversine(pt, node)
+        if NODE_TREE is not None:
+            _, idx = NODE_TREE.query(pt)
+            node = NODE_LIST[idx]
+            return node, haversine(pt, node)
 
     if node_index is not None:
         min_dist = float('inf')
@@ -345,12 +363,23 @@ else:
 print("[RouteSense] Initializing KD-Tree & Vectorized Spatial Indices...")
 NODE_ARRAY = np.array(NODE_LIST, dtype=np.float64)
 NODE_TREE = cKDTree(NODE_ARRAY)
+
+# Index largest connected component for 100% routable snapping
+components = sorted(list(nx.connected_components(G_BASE)), key=len, reverse=True)
+if components and len(components[0]) > len(NODE_LIST) * 0.7:
+    ROUTABLE_NODE_LIST = list(components[0])
+    ROUTABLE_NODE_ARRAY = np.array(ROUTABLE_NODE_LIST, dtype=np.float64)
+    ROUTABLE_TREE = cKDTree(ROUTABLE_NODE_ARRAY)
+else:
+    ROUTABLE_NODE_LIST = NODE_LIST
+    ROUTABLE_TREE = NODE_TREE
+
 EDGE_LIST = list(G_BASE.edges(data=True))
 EDGE_MIDS = np.array([
     [((u[0] + v[0]) * 0.5), ((u[1] + v[1]) * 0.5)]
     for u, v, _ in EDGE_LIST
 ], dtype=np.float64)
-print(f"[RouteSense] Ready: {len(NODE_LIST)} nodes indexed in KD-Tree, {len(EDGE_LIST)} edges indexed.")
+print(f"[RouteSense] Ready: {len(NODE_LIST)} nodes indexed in KD-Tree ({len(ROUTABLE_NODE_LIST)} routable), {len(EDGE_LIST)} edges indexed.")
 
 
 # ── Routing Engine ─────────────────────────────────────────────
@@ -387,6 +416,7 @@ def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
     slope_pen = profile['slope_penalty']
     avoid_steps = profile['avoid_steps']
     avoid_footway = profile['avoid_footway']
+    max_slope = profile.get('max_slope', None)
 
     G_weighted = G.copy()
 
@@ -529,15 +559,28 @@ def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
             mult = risk_mults.get(effective_risk, 1.0)
             cost = dist * mult
 
-            # ── Slope penalty for elderly ──
+            # ── Slope penalty for elderly & wheelchair ──
             if slope_pen > 0 and slope_val > 5:
                 cost += dist * slope_pen * (slope_val / 10)
 
-            # ── Avoid steps/footway for elderly ──
+            # ── Avoid steps/footway ──
             if avoid_steps and highway == 'steps':
-                cost += dist * 50  # huge penalty
+                if profile_name == 'wheelchair':
+                    is_impassable = True
+                    cost = float('inf')
+                else:
+                    cost += dist * 50  # huge penalty
+
             if avoid_footway and highway in ('footway', 'path'):
                 cost += dist * 10
+
+            # ── Max slope limit (e.g. 8.0% for wheelchair) ──
+            if max_slope is not None and slope_val > max_slope:
+                if profile_name == 'wheelchair':
+                    is_impassable = True
+                    cost = float('inf')
+                else:
+                    cost += dist * 50
 
         G_weighted[u][v]['routesense_cost'] = cost
         G_weighted[u][v]['effective_risk'] = effective_risk
@@ -548,20 +591,37 @@ def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
 
 
 def run_routing(origin, destination, profile_name, flood_center=None, flood_radius=2000,
-                flood_intensity=0.5, water_level=1.0, flood_polygon=None, flood_zones=None):
+                flood_intensity=0.5, water_level=1.0, flood_polygon=None, flood_zones=None,
+                objective='safest', auto_reallocate=False, allow_reallocate=None, reallocate=None):
     """
     Full routing pipeline: find nearest nodes, compute both routes, extract metrics.
 
-    Normal route: minimizes total distance (meters) on the unmodified base graph.
-                  This is the unrestricted shortest-distance path ignoring flood state.
-    RouteSense route: minimizes routesense_cost (risk-weighted meters) on the
-                      flood-adjusted graph, excluding roads marked impassable.
+    Invariants:
+    - Dry condition (flood_active == False): routesense route strictly equals normal
+      Dijkstra shortest route (rs_dist == normal_dist) with zero detour penalties.
+    - Flood on route — safe alternative exists: recompute path on G_passable, setting
+      comparison.routes_differ = True.
+    - Flood blocks destination — instant shelter reallocation: if destination is blocked
+      and auto_reallocate is enabled, runs single-source Dijkstra on G_passable from origin
+      across all Thrissur shelters, selects closest reachable unflooded shelter, and returns
+      reallocated: True, reallocated_shelter, and reallocation_reason.
+    - Completely trapped: if origin has no passable exits to any shelter or destination,
+      returns route_safety: 'blocked', routesense: None, and error:
+      "No safe route available — request rescue assistance."
     """
+    if allow_reallocate is not None:
+        auto_reallocate = allow_reallocate
+    if reallocate is not None:
+        auto_reallocate = reallocate
+
     origin_node, origin_dist = nearest_node(G_BASE, tuple(origin), NODE_LIST)
     dest_node, dest_dist = nearest_node(G_BASE, tuple(destination), NODE_LIST)
 
     if origin_node is None or dest_node is None:
         return {"error": "Could not map origin/destination to graph"}
+
+    if origin_dist > 30000 or dest_dist > 30000:
+        return {"error": "Origin or destination is outside the study area road network"}
 
     if not nx.has_path(G_BASE, origin_node, dest_node):
         return {"error": "No path exists between origin and destination"}
@@ -573,30 +633,72 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
     # Normal route (distance only, on base graph — always ignores flood state)
     normal_path = nx.shortest_path(G_BASE, source=origin_node, target=dest_node, weight='distance')
 
-    # RouteSense route (risk-weighted, strictly excludes impassable roads)
-    rs_path = None
-    rs_error = None
+    # Passable subgraph (strictly excludes impassable roads where flood_penalty > 0.85)
     passable_edges = [(u, v) for u, v, d in G_w.edges(data=True) if not d.get('impassable', False)]
     G_passable = G_w.edge_subgraph(passable_edges)
 
-    try:
-        if nx.has_path(G_passable, origin_node, dest_node):
-            candidate_path = nx.shortest_path(G_passable, source=origin_node, target=dest_node, weight='routesense_cost')
-            # Extra server-side verification: assert zero impassable edges
-            is_valid = True
-            for i in range(len(candidate_path) - 1):
-                edge_data = G_w.get_edge_data(candidate_path[i], candidate_path[i+1])
-                if edge_data and edge_data.get('impassable', False):
-                    is_valid = False
-                    break
-            if is_valid:
-                rs_path = candidate_path
-            else:
-                rs_error = "No route satisfying the configured safety constraints is available"
-        else:
-            rs_error = "No route satisfying the configured safety constraints is available"
-    except (nx.NetworkXNoPath, nx.NodeNotFound):
-        rs_error = "No route satisfying the configured safety constraints is available"
+    flood_active = flood_center is not None or flood_polygon is not None or bool(flood_zones)
+
+    rs_path = None
+    rs_error = None
+    reallocated = False
+    reallocated_shelter = None
+    reallocation_reason = None
+
+    if not flood_active:
+        # Dry Condition: routesense route must strictly equal normal Dijkstra shortest route
+        rs_path = normal_path
+    else:
+        # Flood on Route: Attempt to route to original destination on G_passable
+        try:
+            if nx.has_path(G_passable, origin_node, dest_node):
+                cost_weight = 'distance' if objective == 'shortest' else 'routesense_cost'
+                candidate_path = nx.shortest_path(G_passable, source=origin_node, target=dest_node, weight=cost_weight)
+                is_valid = True
+                for i in range(len(candidate_path) - 1):
+                    edge_data = G_w.get_edge_data(candidate_path[i], candidate_path[i+1])
+                    if edge_data and edge_data.get('impassable', False):
+                        is_valid = False
+                        break
+                if is_valid:
+                    rs_path = candidate_path
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
+            rs_path = None
+
+        # Flood Blocks Destination: Instant Shelter Reallocation
+        if rs_path is None and auto_reallocate:
+            try:
+                dist_dict = nx.single_source_dijkstra_path_length(G_passable, origin_node, weight='routesense_cost')
+            except Exception:
+                dist_dict = {}
+
+            best_sh = None
+            min_sh_cost = float('inf')
+            for sh in SHELTERS:
+                sh_coords = sh['coordinates']
+                # Exclude shelter if within flood epicenter
+                if flood_center and haversine(sh_coords, flood_center) < flood_radius:
+                    continue
+                sh_node, _ = nearest_node(G_BASE, tuple(sh_coords))
+                if sh_node in dist_dict:
+                    cost = dist_dict[sh_node]
+                    if cost < min_sh_cost:
+                        min_sh_cost = cost
+                        best_sh = sh
+
+            if best_sh:
+                sh_node, _ = nearest_node(G_BASE, tuple(best_sh['coordinates']))
+                try:
+                    sh_path = nx.shortest_path(G_passable, source=origin_node, target=sh_node, weight='routesense_cost')
+                    rs_path = sh_path
+                    reallocated = True
+                    reallocated_shelter = best_sh
+                    reallocation_reason = f"Primary destination blocked by flood hazard. Automatically reallocated to closest safe shelter: {best_sh['name']}."
+                except Exception:
+                    rs_path = None
+
+        if rs_path is None:
+            rs_error = "No route satisfying the configured safety constraints is available. No safe route available — request rescue assistance."
 
     def extract_metrics(path, graph, use_effective=False):
         total_dist = 0
@@ -639,7 +741,6 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
 
     # Build affected roads list (roads whose risk changed due to flood)
     affected_roads = []
-    flood_active = flood_center is not None or flood_polygon is not None or bool(flood_zones)
     if flood_active:
         for u, v, data in G_w.edges(data=True):
             if data.get('effective_risk', data['predicted_risk']) != data['predicted_risk']:
@@ -649,21 +750,50 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
                     "effective_risk": data['effective_risk'],
                     "flood_penalty": data.get('flood_penalty', 0),
                     "impassable": data.get('impassable', False),
+                    "elevation": data.get('elevation', 15),
                 })
 
     # Build response
     if rs_path is not None:
-        rs_metrics = extract_metrics(rs_path, G_w, use_effective=True)
+        rs_metrics = extract_metrics(rs_path, G_w, use_effective=flood_active)
         dist_diff = rs_metrics['distance'] - normal_metrics['distance']
         dist_pct = round((dist_diff / normal_metrics['distance']) * 100, 1) if normal_metrics['distance'] > 0 else 0
         high_avoided = normal_metrics['risk_counts'].get(2, 0) - rs_metrics['risk_counts'].get(2, 0)
         high_normal = normal_metrics['risk_counts'].get(2, 0)
         reduction_pct = round((high_avoided / high_normal * 100) if high_normal > 0 else 0, 1)
 
+        # Route safety classification
+        total_segs = rs_metrics['segments']
+        high_segs = rs_metrics['risk_counts'].get(2, 0)
+        high_pct = (high_segs / total_segs * 100) if total_segs > 0 else 0
+
+        if high_pct == 0 and not any(f.get('properties', {}).get('impassable') for f in rs_metrics['geojson']['features']):
+            route_safety = 'safe'
+        elif high_pct < 10:
+            route_safety = 'caution'
+        elif high_pct < 30:
+            route_safety = 'elevated'
+        else:
+            route_safety = 'high_risk'
+
+        if not flood_active:
+            dist_diff = 0.0
+            dist_pct = 0.0
+            routes_differ = False
+            reduction_pct = 0.0
+            high_avoided = 0
+        else:
+            routes_differ = normal_path != rs_path or reallocated
+
         return {
             "origin": list(origin_node),
-            "destination": list(dest_node),
+            "destination": list(dest_node) if not reallocated else list(rs_path[-1]),
+            "original_destination": list(dest_node),
+            "reallocated": reallocated,
+            "reallocated_shelter": reallocated_shelter,
+            "reallocation_reason": reallocation_reason,
             "profile": profile_name,
+            "route_safety": route_safety,
             "normal": normal_metrics,
             "routesense": rs_metrics,
             "comparison": {
@@ -671,7 +801,7 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
                 "distance_pct": dist_pct,
                 "high_risk_avoided": high_avoided,
                 "risk_reduction_pct": reduction_pct,
-                "routes_differ": normal_path != rs_path
+                "routes_differ": routes_differ
             },
             "affected_roads": affected_roads[:3000],
             "affected_roads_count": len(affected_roads),
@@ -683,14 +813,19 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
             }
         }
     else:
-        # No safe route found — return normal route with error
+        # No safe route found / completely trapped
         return {
             "origin": list(origin_node),
             "destination": list(dest_node),
             "profile": profile_name,
+            "route_safety": "blocked",
             "normal": normal_metrics,
             "routesense": None,
-            "routesense_error": rs_error,
+            "error": "No safe route available — request rescue assistance.",
+            "routesense_error": rs_error or "No route satisfying the configured safety constraints is available. No safe route available — request rescue assistance.",
+            "reallocated": False,
+            "reallocated_shelter": None,
+            "reallocation_reason": None,
             "comparison": None,
             "affected_roads": affected_roads[:3000],
             "affected_roads_count": len(affected_roads),
@@ -698,7 +833,7 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
             "route_validated": False,
             "routing_objective": {
                 "normal": "Minimizes total distance (meters) on the base road network, ignoring flood state.",
-                "routesense": "No safe route available under current disaster scenario."
+                "routesense": "No safe route available — request rescue assistance."
             }
         }
 
@@ -727,6 +862,7 @@ def health():
         "edges": G_BASE.number_of_edges(),
         "study_area": "Thrissur, Kerala",
         "road_segments": len(study_roads),
+        "shelters_count": len(SHELTERS),
         "prototype": True
     })
 
@@ -759,6 +895,9 @@ def route():
         flood_polygon = flood.get('polygon')  # optional legacy freehand polygon coords
         flood_zones = flood.get('flood_zones') or flood.get('zones')
 
+    objective = data.get('objective', 'safest')
+    auto_reallocate = data.get('auto_reallocate', data.get('allow_reallocate', data.get('reallocate', True)))
+
     result = run_routing(
         origin, destination, profile,
         flood_center=flood_center,
@@ -766,7 +905,9 @@ def route():
         flood_intensity=flood_intensity,
         water_level=water_level,
         flood_polygon=flood_polygon,
-        flood_zones=flood_zones
+        flood_zones=flood_zones,
+        objective=objective,
+        auto_reallocate=auto_reallocate
     )
     return jsonify(result)
 
@@ -981,6 +1122,8 @@ def nearest_shelter():
     return jsonify({
         "best_shelter": best_shelter,
         "all_shelters": ranked,
+        "ranked_shelters": ranked,
+        "shelters": ranked,
         "shelter_count": len(ranked),
         "route": route_data,
         "flood_active": flood_active
@@ -1123,6 +1266,29 @@ def get_scenarios():
         with open(scenarios_path, 'r', encoding='utf-8') as f:
             return jsonify(json.load(f))
     return jsonify({"scenarios": []})
+
+
+@app.route('/api/streets')
+@app.route('/api/roads')
+@app.route('/api/street-view')
+def get_streets_info():
+    """Endpoint for road network and street view metadata."""
+    return jsonify({
+        "status": "ok",
+        "nodes": G_BASE.number_of_nodes(),
+        "edges": G_BASE.number_of_edges(),
+        "study_area": "Thrissur, Kerala",
+        "mode": "street_view",
+        "crs": "EPSG:4326"
+    })
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    if request.path.startswith('/api/'):
+        return jsonify({"error": "API route not found", "path": request.path}), 404
+    return e
+
 
 
 if __name__ == '__main__':

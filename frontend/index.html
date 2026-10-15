@@ -7,7 +7,7 @@
     <meta name="description" content="AI-powered disaster evacuation routing system for Kerala. Prototype road-risk classification with flood simulation.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><circle cx='14' cy='14' r='12' fill='%230f172a' stroke='%2338bdf8' stroke-width='2'/><circle cx='14' cy='14' r='5' fill='%2338bdf8'/><path d='M14 2 L14 7 M14 21 L14 26 M2 14 L7 14 M21 14 L26 14' stroke='%2338bdf8' stroke-width='1.5'/></svg>">
     <link rel="manifest" href="manifest.json">
@@ -18,28 +18,28 @@
     <div id="dynamic-hazard-alert" class="hazard-alert-banner" style="display:none;">
         <div class="alert-icon">⚠️</div>
         <div class="alert-content">
-            <div class="alert-title">CRITICAL HAZARD DETECTED ON ROUTE</div>
+            <div class="alert-title" id="hazard-alert-title">CRITICAL HAZARD DETECTED ON ROUTE</div>
             <div class="alert-desc" id="hazard-alert-text">Flooding reported ahead! Recalculating safe evasion path...</div>
         </div>
         <button class="alert-close" onclick="dismissHazardAlert()">✕</button>
     </div>
 
-    <!-- ── Top Bar ──────────────────────────────────── -->
+    <!-- ── Top Header ───────────────────────────────── -->
     <header id="header">
         <div id="brand">
             <div id="brand-icon">
-                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                    <circle cx="14" cy="14" r="12" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>
-                    <circle cx="14" cy="14" r="5" fill="rgba(96,165,250,0.8)"/>
-                    <path d="M14 2 L14 6 M14 22 L14 26 M2 14 L6 14 M22 14 L26 14" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
+                <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
+                    <circle cx="14" cy="14" r="12" stroke="rgba(255,255,255,0.8)" stroke-width="1.8"/>
+                    <circle cx="14" cy="14" r="5" fill="#38bdf8"/>
+                    <path d="M14 2 L14 6 M14 22 L14 26 M2 14 L6 14 M22 14 L26 14" stroke="rgba(255,255,255,0.5)" stroke-width="1.5"/>
                 </svg>
             </div>
             <div>
-                <div id="brand-name">ROUTESENSE</div>
-                <div id="brand-sub">AI Evacuation Intelligence</div>
+                <span id="brand-name">ROUTESENSE AI</span>
+                <span id="brand-sub">Thrissur Evacuation Intelligence</span>
             </div>
         </div>
-        <div style="display:flex; align-items:center; gap:12px;">
+        <div class="header-right">
             <button id="btn-mobile-connect" class="mobile-connect-btn" onclick="openMobileConnectModal()">📱 Mobile Connect</button>
             <div id="status-bar">
                 <span id="status-dot"></span>
@@ -48,297 +48,450 @@
         </div>
     </header>
 
-    <!-- ── Map Container ────────────────────────────── -->
-    <div id="map"></div>
+    <!-- ── Main Application Layout: Sidebar + Map ──── -->
+    <div id="app-layout">
+        <!-- ── Left Sidebar (3 Windows) ─────────────── -->
+        <aside id="sidebar">
+            <!-- Sidebar Tab Navigation -->
+            <nav id="sidebar-tabs" role="tablist">
+                <button class="sidebar-tab active" id="tab-btn-sim" role="tab" aria-selected="true" data-tab="simulation" onclick="switchTab('simulation')">
+                    <span class="tab-icon">🌊</span>
+                    <span class="tab-label">Simulation</span>
+                </button>
+                <button class="sidebar-tab" id="tab-btn-status" role="tab" aria-selected="false" data-tab="status" onclick="switchTab('status')">
+                    <span class="tab-icon">📊</span>
+                    <span class="tab-label">Status</span>
+                </button>
+                <button class="sidebar-tab" id="tab-btn-route" role="tab" aria-selected="false" data-tab="route" onclick="switchTab('route')">
+                    <span class="tab-icon">🧭</span>
+                    <span class="tab-label">Route Path</span>
+                </button>
+            </nav>
 
-    <!-- ── Map Hint ─────────────────────────────────── -->
-    <div id="map-hint">Click map to set <strong>origin</strong>, then <strong>destination</strong></div>
+            <!-- ═══════════════════════════════════════════
+                 WINDOW 1: SIMULATION
+                 Contains ONLY simulation-specific controls
+                 ═══════════════════════════════════════════ -->
+            <div id="tab-simulation" class="tab-content active" role="tabpanel">
+                <!-- Playback & Time Progression Controls -->
+                <div class="panel-card">
+                    <div class="card-header">
+                        <span class="card-title">SIMULATION PLAYBACK</span>
+                        <span id="sim-state-badge" class="badge badge-paused">PAUSED</span>
+                    </div>
 
-    <!-- ── Legend ────────────────────────────────────── -->
-    <div id="legend" class="glass-panel">
-        <div class="legend-title">RISK & ROUTING</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#34d399"></span>Low Risk</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#fbbf24"></span>Medium Risk</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>High Risk</div>
-        <div class="legend-item" id="legend-affected" style="display:none"><span class="legend-line" style="background:#ef4444"></span>Affected Road</div>
-        <div class="legend-item" id="legend-flood" style="display:none"><span class="legend-dot" style="background:rgba(59,130,246,0.5);border:1px solid #3b82f6"></span>Flood Zone</div>
-        <div class="legend-item"><span class="legend-line" style="background:#06b6d4"></span>Waterways</div>
-        <div class="legend-sep"></div>
-        <div class="legend-item" title="Recommended lower-risk evacuation path with green casing outline and segment risk colors">
-            <span class="legend-outline-line"><span class="legend-outline-inner"></span></span>
-            <span>RouteSense (Safe)</span>
-        </div>
-        <div class="legend-item" title="Unrestricted shortest-distance path ignoring flood state">
-            <span class="legend-dashed-line"></span>
-            <span>Shortest Route</span>
-        </div>
-    </div>
-
-    <!-- ── Map Layers & Adaptive Focus Panel ────────── -->
-    <div id="layer-panel" class="glass-panel floating-panel">
-        <div class="panel-header" onclick="togglePanel('layer-panel')">
-            <span class="panel-icon">▤</span>
-            MAP LAYERS & FOCUS
-            <span class="panel-toggle">▾</span>
-        </div>
-        <div class="panel-body">
-            <div class="field">
-                <label>Adaptive Focus State</label>
-                <div class="focus-btn-group">
-                    <button class="focus-btn active" id="focus-balanced" onclick="setMapFocus('BALANCED')">Balanced</button>
-                    <button class="focus-btn" id="focus-route" onclick="setMapFocus('ROUTE_FOCUS')">Route Focus</button>
-                    <button class="focus-btn" id="focus-flood-road" onclick="setMapFocus('FLOOD_ROAD_FOCUS')">Flood Roads</button>
-                    <button class="focus-btn" id="focus-flood-zone" onclick="setMapFocus('FLOOD_ZONE_FOCUS')">Flood Zone</button>
-                    <button class="focus-btn full-width" id="focus-env" onclick="setMapFocus('ENVIRONMENT_FOCUS')">Environment (Rivers)</button>
-                </div>
-            </div>
-            <div class="field">
-                <label>Basemap Style</label>
-                <div class="basemap-switch">
-                    <button class="basemap-btn active" id="basemap-streets" onclick="switchBasemap('streets')">Street Map</button>
-                    <button class="basemap-btn" id="basemap-satellite" onclick="switchBasemap('satellite')">Satellite</button>
-                </div>
-            </div>
-            <div class="field">
-                <label>Layer Visibility</label>
-                <div class="layer-toggle-list">
-                    <div class="layer-toggle-item">
-                        <label><input type="checkbox" id="toggle-particles" checked onchange="toggleLayerGroup('particles', this.checked)"> Risk Particles</label>
-                    </div>
-                    <div class="layer-toggle-item">
-                        <label><input type="checkbox" id="toggle-affected" checked onchange="toggleLayerGroup('affected', this.checked)"> Affected Roads</label>
-                    </div>
-                    <div class="layer-toggle-item">
-                        <label><input type="checkbox" id="toggle-flood" checked onchange="toggleLayerGroup('flood', this.checked)"> Flood Zones</label>
-                    </div>
-                    <div class="layer-toggle-item">
-                        <label><input type="checkbox" id="toggle-rivers" checked onchange="toggleLayerGroup('rivers', this.checked)"> Rivers & Canals</label>
-                    </div>
-                    <div class="layer-toggle-item">
-                        <label><input type="checkbox" id="toggle-routesense" checked onchange="toggleLayerGroup('routesense', this.checked)"> RouteSense Route</label>
-                    </div>
-                    <div class="layer-toggle-item">
-                        <label><input type="checkbox" id="toggle-normal" checked onchange="toggleLayerGroup('normal', this.checked)"> Shortest Route</label>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ── Flood Simulation Panel ───────────────────── -->
-    <div id="flood-panel" class="glass-panel floating-panel">
-        <div class="panel-header" onclick="togglePanel('flood-panel')">
-            <span class="panel-icon">◉</span>
-            FLOOD SIMULATION
-            <span class="panel-toggle">▾</span>
-        </div>
-        <div class="panel-body">
-            <div class="field">
-                <label>Scenario Preset</label>
-                <select id="scenario-select" class="scenario-select" onchange="applyScenarioPreset(this.value)">
-                    <option value="">Custom Simulation...</option>
-                    <option value="SCN_FLOOD_PUZHAKKAL_LOWLAND">Puzhakkal River Overflow</option>
-                    <option value="SCN_FLOOD_KOLE_BREACH">Kole Wetland Basin Breach</option>
-                    <option value="SCN_FLOOD_SWARAJ_ROUND_FLASH">Swaraj Round Core Flashflood</option>
-                    <option value="SCN_FLOOD_KURIACHIRA_INUNDATION">Kuriachira Dip Waterlogging</option>
-                </select>
-            </div>
-            <div class="field">
-                <label>Simulation Mode</label>
-                <div class="mode-switch-group">
-                    <button id="mode-circle-btn" class="mode-switch-btn active" onclick="setFloodMode('circle')">Circle Baseline</button>
-                    <button id="mode-polygon-btn" class="mode-switch-btn" onclick="setFloodMode('zones')">Custom Flood Zones</button>
-                </div>
-            </div>
-
-            <!-- Hidden input for backwards compatibility -->
-            <input type="hidden" id="flood-intensity" value="0.5">
-
-            <!-- ── Circle Baseline Controls ── -->
-            <div id="circle-controls">
-                <div class="field">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                        <label style="margin:0">Flood Center</label>
-                        <button id="btn-place-circle" class="btn btn-ghost btn-xs" onclick="togglePlaceCircleMode()">🎯 Place Center</button>
-                    </div>
-                    <p class="hint" id="flood-hint">Click 'Place Center' or Shift+Click map</p>
-                </div>
-                <div class="field">
-                    <label>Simulated Rainfall Intensity (Circle)</label>
-                    <input type="range" id="circle-intensity" min="0" max="100" step="1" value="50">
-                    <div class="slider-labels">
-                        <span id="circle-intensity-category" class="intensity-badge badge-moderate">Moderate (31–60%)</span>
-                        <span id="circle-intensity-val">50%</span>
-                    </div>
-                </div>
-                <div class="field">
-                    <label>Water Level</label>
-                    <input type="range" id="water-level" min="0" max="5" step="0.1" value="1.0">
-                    <div class="slider-labels"><span>0 m</span><span id="water-val">1.0 m</span><span>5 m</span></div>
-                </div>
-                <div class="field">
-                    <label>Flood Radius</label>
-                    <input type="range" id="flood-radius" min="500" max="5000" step="100" value="2000">
-                    <div class="slider-labels"><span>500m</span><span id="radius-val">2000m</span><span>5km</span></div>
-                </div>
-            </div>
-
-            <!-- ── Custom Flood Zones Controls ── -->
-            <div id="polygon-controls" style="display:none">
-                <div id="zone-drawing-actions" style="margin-bottom:8px">
-                    <button id="btn-draw-zone" class="btn btn-primary btn-sm" style="width:100%" onclick="startDrawingZone()">
-                        ✏️ Draw Flood Zone
-                    </button>
-                    <div id="zone-drawing-active-row" style="display:none; gap:4px; margin-top:4px">
-                        <button id="btn-finish-poly" class="btn btn-primary btn-sm" style="flex:1" onclick="finishZone()" disabled>
-                            ✓ Finish Zone
+                    <div class="playback-controls">
+                        <button id="btn-play-pause" class="btn btn-playback" onclick="toggleSimulationPlay()">
+                            <span id="play-pause-icon">▶</span>
+                            <span id="play-pause-text">Play</span>
                         </button>
-                        <button id="btn-cancel-poly" class="btn btn-ghost btn-sm" style="flex:1" onclick="cancelDrawingZone()">
-                            ✕ Cancel
-                        </button>
+                        <div class="speed-group">
+                            <span class="speed-label">Speed:</span>
+                            <button class="speed-btn active" id="speed-1x" onclick="setSimulationSpeed(1)">1×</button>
+                            <button class="speed-btn" id="speed-2x" onclick="setSimulationSpeed(2)">2×</button>
+                            <button class="speed-btn" id="speed-5x" onclick="setSimulationSpeed(5)">5×</button>
+                        </div>
                     </div>
-                    <p class="hint" id="poly-status" style="margin-top:4px">Click 'Draw Flood Zone' then click boundary points</p>
+
+                    <div class="timeline-row">
+                        <div class="timeline-header">
+                            <span class="field-label">Simulation Time Elapsed</span>
+                            <span id="sim-time-display" class="timeline-val">0 min</span>
+                        </div>
+                        <input type="range" id="sim-time-slider" min="0" max="180" step="5" value="0" oninput="onSimulationTimeSlider(this.value)">
+                        <div class="slider-labels"><span>0 min</span><span>90 min</span><span>3 hrs</span></div>
+                    </div>
                 </div>
 
-                <div id="zone-management-box">
-                    <div class="field" style="margin-bottom:6px">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px">
-                            <label style="margin:0">Active Flood Zones (<span id="zone-count-badge">0</span>)</label>
-                            <button id="btn-delete-zone" class="btn btn-ghost btn-xs danger-text" onclick="deleteSelectedZone()" disabled title="Delete selected zone">
-                                🗑️ Delete Zone
+                <!-- Scenario Presets -->
+                <div class="panel-card">
+                    <div class="field-label">Hazard Scenario Preset</div>
+                    <select id="scenario-select" class="form-select" onchange="applyScenarioPreset(this.value)">
+                        <option value="">Custom Scenario...</option>
+                        <option value="SCN_FLOOD_PUZHAKKAL_LOWLAND">Puzhakkal River Overflow</option>
+                        <option value="SCN_FLOOD_KOLE_BREACH">Kole Wetland Basin Breach</option>
+                        <option value="SCN_FLOOD_SWARAJ_ROUND_FLASH">Swaraj Round Core Flashflood</option>
+                        <option value="SCN_FLOOD_KURIACHIRA_INUNDATION">Kuriachira Dip Waterlogging</option>
+                    </select>
+                </div>
+
+                <!-- Simulation Mode Switcher -->
+                <div class="panel-card">
+                    <div class="field-label">Simulation Geometry Mode</div>
+                    <div class="toggle-group">
+                        <button id="mode-circle-btn" class="toggle-btn active" onclick="setFloodMode('circle')">Circular Flood Zone</button>
+                        <button id="mode-polygon-btn" class="toggle-btn" onclick="setFloodMode('zones')">Custom Draw Zones</button>
+                    </div>
+                </div>
+
+                <!-- Hidden compat input -->
+                <input type="hidden" id="flood-intensity" value="0.5">
+
+                <!-- ── Mode A: Circular Flood Controls ── -->
+                <div id="circle-controls" class="panel-card">
+                    <div class="section-row">
+                        <span class="field-label">Flood Epicenter</span>
+                        <button id="btn-place-circle" class="btn btn-action-xs" onclick="togglePlaceCircleMode()">🎯 Place Center</button>
+                    </div>
+                    <p class="field-hint" id="flood-hint">Click 'Place Center' then click anywhere on map</p>
+
+                    <div class="field-group">
+                        <div class="field-header">
+                            <span class="field-label">Rainfall Intensity</span>
+                            <span id="circle-intensity-val" class="field-val">50%</span>
+                        </div>
+                        <input type="range" id="circle-intensity" min="0" max="100" step="1" value="50">
+                        <div class="slider-labels">
+                            <span id="circle-intensity-category" class="intensity-badge badge-moderate">Moderate (31–60%)</span>
+                            <span>Max 100%</span>
+                        </div>
+                    </div>
+
+                    <div class="field-group">
+                        <div class="field-header">
+                            <span class="field-label">Surge Water Level</span>
+                            <span id="water-val" class="field-val">1.0 m</span>
+                        </div>
+                        <input type="range" id="water-level" min="0" max="5" step="0.1" value="1.0">
+                        <div class="slider-labels"><span>0 m</span><span>2.5 m</span><span>5.0 m</span></div>
+                    </div>
+
+                    <div class="field-group">
+                        <div class="field-header">
+                            <span class="field-label">Flood Spread Radius</span>
+                            <span id="radius-val" class="field-val">2000m</span>
+                        </div>
+                        <input type="range" id="flood-radius" min="500" max="5000" step="100" value="2000">
+                        <div class="slider-labels"><span>500m</span><span>2500m</span><span>5.0km</span></div>
+                    </div>
+                </div>
+
+                <!-- ── Mode B: Custom Flood Zones Controls ── -->
+                <div id="polygon-controls" class="panel-card" style="display:none">
+                    <div id="zone-drawing-actions">
+                        <button id="btn-draw-zone" class="btn btn-primary btn-block" onclick="startDrawingZone()">
+                            ✏️ Draw Flood Zone Polygon
+                        </button>
+                        <div id="zone-drawing-active-row" style="display:none; gap:6px; margin-top:6px">
+                            <button id="btn-finish-poly" class="btn btn-primary" style="flex:1" onclick="finishZone()" disabled>
+                                ✓ Finish Zone
+                            </button>
+                            <button id="btn-cancel-poly" class="btn btn-ghost" style="flex:1" onclick="cancelDrawingZone()">
+                                ✕ Cancel
                             </button>
                         </div>
-                        <select id="zone-selector" class="scenario-select" onchange="onZoneSelect(this.value)">
-                            <option value="">No custom zones created</option>
-                        </select>
+                        <p class="field-hint" id="poly-status">Click 'Draw Flood Zone' then click boundary vertices on the map</p>
                     </div>
 
-                    <div class="field" id="selected-zone-intensity-field">
-                        <label>Simulated Rainfall Intensity (Selected Zone)</label>
-                        <input type="range" id="zone-rainfall-intensity" min="0" max="100" step="1" value="70" disabled>
-                        <div class="slider-labels">
-                            <span id="zone-intensity-category" class="intensity-badge badge-heavy">Heavy (61–80%)</span>
-                            <span id="zone-intensity-val">70%</span>
+                    <div id="zone-management-box">
+                        <div class="section-row" style="margin-top:12px">
+                            <span class="field-label">Active Custom Zones (<span id="zone-count-badge">0</span>)</span>
+                            <button id="btn-delete-zone" class="btn btn-action-xs danger-text" onclick="deleteSelectedZone()" disabled>🗑️ Delete</button>
+                        </div>
+                        <select id="zone-selector" class="form-select" onchange="onZoneSelect(this.value)">
+                            <option value="">No custom zones created</option>
+                        </select>
+
+                        <div class="field-group" id="selected-zone-intensity-field" style="margin-top:10px">
+                            <div class="field-header">
+                                <span class="field-label">Selected Zone Rainfall Intensity</span>
+                                <span id="zone-intensity-val" class="field-val">70%</span>
+                            </div>
+                            <input type="range" id="zone-rainfall-intensity" min="0" max="100" step="1" value="70" disabled>
+                            <div class="slider-labels">
+                                <span id="zone-intensity-category" class="intensity-badge badge-heavy">Heavy (61–80%)</span>
+                                <span>Max 100%</span>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                <!-- Execution Actions -->
+                <div class="panel-card">
+                    <div class="btn-row">
+                        <button id="btn-simulate" class="btn btn-primary" style="flex:1" onclick="simulateFlood()">Apply Simulation</button>
+                        <button id="btn-reset-flood" class="btn btn-ghost" onclick="resetFlood()">Reset All</button>
+                    </div>
+                </div>
+
+                <!-- Inundation Arrival Card -->
+                <div class="inundation-eta-card" id="flood-eta-card" style="display:none;">
+                    <div class="eta-title">⏱️ EST. INUNDATION ARRIVAL</div>
+                    <div class="eta-value" id="flood-eta-value">—</div>
+                    <div class="eta-urgency" id="flood-eta-urgency">NORMAL</div>
+                </div>
+
+                <div class="proto-note">Adjusting parameters updates flood zones, road-risk penalties, and routing state deterministically.</div>
             </div>
 
-            <div class="btn-row" style="margin-top:8px">
-                <button id="btn-simulate" class="btn btn-primary" onclick="simulateFlood()">Simulate Flood</button>
-                <button id="btn-reset-flood" class="btn btn-ghost" onclick="resetFlood()">Reset All</button>
-            </div>
-            <div class="inundation-eta-card" id="flood-eta-card" style="display:none;">
-                <div class="eta-title">⏱️ EST. INUNDATION ARRIVAL</div>
-                <div class="eta-value" id="flood-eta-value">—</div>
-                <div class="eta-urgency" id="flood-eta-urgency">NORMAL</div>
-            </div>
-            <p class="proto-note">Simulated rainfall intensity controls hazard severity</p>
-        </div>
-    </div>
+            <!-- ═══════════════════════════════════════════
+                 WINDOW 2: FLOOD & ROUTING STATUS
+                 Monitoring Panel ONLY. No forms or playback.
+                 ═══════════════════════════════════════════ -->
+            <div id="tab-status" class="tab-content" role="tabpanel">
+                <!-- Flood Hazard Conditions Card -->
+                <div class="status-card">
+                    <div class="status-card-header">
+                        <span class="status-indicator" id="st-flood-dot"></span>
+                        <span class="status-card-title">FLOOD CONDITIONS</span>
+                    </div>
 
-    <!-- ── Routing Panel ────────────────────────────── -->
-    <div id="route-panel" class="glass-panel floating-panel">
-        <div class="panel-header" onclick="togglePanel('route-panel')">
-            <span class="panel-icon">→</span>
-            ROUTESENSE ROUTING
-            <span class="panel-toggle">▾</span>
-        </div>
-        <div class="panel-body">
-            <div class="field">
-                <label>Profile</label>
-                <div id="profile-selector">
-                    <button class="profile-btn active" data-profile="general" onclick="selectProfile('general')">General</button>
-                    <button class="profile-btn" data-profile="elderly" onclick="selectProfile('elderly')">Elderly</button>
-                    <button class="profile-btn" data-profile="emergency" onclick="selectProfile('emergency')">Emergency</button>
+                    <div class="status-row">
+                        <span class="status-label">Overall Severity</span>
+                        <span class="status-pill pill-grey" id="st-severity-pill">Unknown</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Current Rainfall Intensity</span>
+                        <span class="status-val" id="st-rainfall">Unavailable</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Simulation State</span>
+                        <span class="status-val" id="st-sim-state">Inactive</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Flood-Affected Areas</span>
+                        <span class="status-val" id="st-affected-areas">None</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">High-Risk Segments</span>
+                        <span class="status-val" id="st-highrisk-count">0</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Blocked Segments</span>
+                        <span class="status-val danger-text" id="st-blocked-count">0</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Estimated Water Rise</span>
+                        <span class="status-val" id="st-water-level">Unavailable</span>
+                    </div>
                 </div>
-            </div>
-            <div class="field" id="origin-field">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <label>Origin</label>
-                    <button id="btn-gps-origin" class="btn-gps-locate" onclick="locateUser()">📍 Live GPS</button>
-                </div>
-                <div class="coord-display" id="origin-display" onclick="setClickMode('origin')" style="cursor:pointer" title="Click to set origin on map">Click map or use default</div>
-            </div>
-            <div class="field" id="dest-field">
-                <label>Destination</label>
-                <div class="coord-display" id="dest-display" onclick="setClickMode('dest')" style="cursor:pointer" title="Click to set destination on map">Click map or use default</div>
-            </div>
-            <div class="btn-row">
-                <button id="btn-route" class="btn btn-primary" onclick="findRoute()">FIND SAFER ROUTE</button>
-            </div>
-            <div class="btn-row">
-                <button id="btn-find-safe-spot" class="btn btn-safe-spot" onclick="findNearestSafeSpot()">🛡️ FIND SAFE SPOT (SHELTER)</button>
-            </div>
-            <div class="btn-row">
-                <button class="btn btn-ghost btn-sm" onclick="useDefaults()">Use Demo Points</button>
-                <button class="btn btn-ghost btn-sm" onclick="clearPoints()">Clear</button>
-            </div>
-        </div>
-    </div>
 
-    <!-- ── Route Impact Panel (hidden until route is computed) ── -->
-    <div id="impact-panel" class="glass-panel floating-panel" style="display:none">
-        <div class="panel-header" onclick="togglePanel('impact-panel')">
-            <span class="panel-icon">◆</span>
-            ROUTE IMPACT
-            <span class="panel-toggle">▾</span>
-        </div>
-        <div class="panel-body">
-            <div class="metric-grid">
-                <div class="metric">
-                    <div class="metric-label">Distance</div>
-                    <div class="metric-value" id="metric-dist">—</div>
+                <!-- Evacuation Route Safety Status Card -->
+                <div class="status-card">
+                    <div class="status-card-header">
+                        <span class="status-indicator" id="st-route-dot"></span>
+                        <span class="status-card-title">EVACUATION ROUTE STATUS</span>
+                    </div>
+
+                    <div class="status-row">
+                        <span class="status-label">Route Safety Status</span>
+                        <span class="status-pill pill-grey" id="st-route-safety-pill">No Route Selected</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Route Risk Level</span>
+                        <span class="status-val" id="st-route-risk">Unavailable</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Safety Clearance</span>
+                        <span class="status-val" id="st-route-clearance">Unavailable</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Passable Alternative Path</span>
+                        <span class="status-val" id="st-route-alt-available">Unknown</span>
+                    </div>
                 </div>
-                <div class="metric">
-                    <div class="metric-label">High-Risk Segs</div>
-                    <div class="metric-value" id="metric-high">—</div>
+
+                <!-- Critical Warnings List -->
+                <div class="status-card" id="st-warnings-card">
+                    <div class="status-card-title" style="margin-bottom:8px">HAZARD ADVISORIES & WARNINGS</div>
+                    <div id="st-warnings-list" class="warnings-container">
+                        <div class="warning-item info">No active hazard alerts for current study area.</div>
+                    </div>
                 </div>
-                <div class="metric">
-                    <div class="metric-label">Risk Reduction</div>
-                    <div class="metric-value highlight" id="metric-reduction">—</div>
-                </div>
-                <div class="metric">
-                    <div class="metric-label">Distance Change</div>
-                    <div class="metric-value" id="metric-dist-change">—</div>
+
+                <!-- Critical Rescue Required Banner (When No Safe Route Available) -->
+                <div id="rescue-banner-status" class="rescue-required-card" style="display:none">
+                    <div class="rescue-card-icon">🚨</div>
+                    <div class="rescue-card-body">
+                        <div class="rescue-card-title">EMERGENCY ADVISORY</div>
+                        <div class="rescue-card-msg">No safe route available — request rescue assistance.</div>
+                        <div class="rescue-card-sub">All overland road corridors to destination are impassable or inundated. Stand by on high ground.</div>
+                    </div>
                 </div>
             </div>
-            <div id="route-status-msg" class="route-msg"></div>
-        </div>
+
+            <!-- ═══════════════════════════════════════════
+                 WINDOW 3: ROUTE PATH
+                 Route-planning controls & calculated path ONLY
+                 ═══════════════════════════════════════════ -->
+            <div id="tab-route" class="tab-content" role="tabpanel">
+                <div class="panel-card">
+                    <div class="field-label">Evacuation Mobility Profile</div>
+                    <div id="profile-selector" class="toggle-group quadruple">
+                        <button class="toggle-btn active" data-profile="general" onclick="selectProfile('general')">General</button>
+                        <button class="toggle-btn" data-profile="wheelchair" onclick="selectProfile('wheelchair')">♿ Wheelchair</button>
+                        <button class="toggle-btn" data-profile="elderly" onclick="selectProfile('elderly')">Elderly</button>
+                        <button class="toggle-btn" data-profile="emergency" onclick="selectProfile('emergency')">Emergency</button>
+                    </div>
+                </div>
+
+                <div class="panel-card">
+                    <div class="field-label">Routing Engine Objective</div>
+                    <div id="objective-selector" class="toggle-group quadruple">
+                        <button class="toggle-btn active" data-objective="safest" onclick="selectObjective('safest')">🛡️ Safest</button>
+                        <button class="toggle-btn" data-objective="fastest" onclick="selectObjective('fastest')">⚡ Fastest</button>
+                        <button class="toggle-btn" data-objective="shortest" onclick="selectObjective('shortest')">📏 Shortest</button>
+                        <button class="toggle-btn" data-objective="accessible" onclick="selectObjective('accessible')">♿ Step-Free</button>
+                    </div>
+                </div>
+
+                <!-- Origin & Destination Selection -->
+                <div class="panel-card">
+                    <div class="field-group">
+                        <div class="section-row">
+                            <span class="field-label">From (Origin Location)</span>
+                            <div style="display:flex;gap:4px">
+                                <button class="btn btn-action-xs" onclick="setClickMode('origin')">📍 Set Origin</button>
+                                <button id="btn-gps-origin" class="btn btn-action-xs" onclick="locateUser()">GPS</button>
+                            </div>
+                        </div>
+                        <div class="coord-display" id="origin-display" onclick="setClickMode('origin')" title="Click map to set origin">Click map or use default</div>
+                    </div>
+
+                    <div class="field-group" style="margin-top:10px">
+                        <div class="section-row">
+                            <span class="field-label">To (Evacuation Destination)</span>
+                            <button class="btn btn-action-xs" onclick="setClickMode('dest')">🎯 Set Dest</button>
+                        </div>
+                        <div class="coord-display" id="dest-display" onclick="setClickMode('dest')" title="Click map to set destination">Click map or use default</div>
+                    </div>
+
+                    <div class="btn-row" style="margin-top:12px">
+                        <button id="btn-route" class="btn btn-primary" style="flex:1" onclick="findRoute()">FIND SAFE ROUTE</button>
+                    </div>
+                    <div class="btn-row" style="margin-top:6px">
+                        <button id="btn-find-safe-spot" class="btn btn-safe-spot" onclick="findNearestSafeSpot()">🛡️ FIND SAFE SHELTER</button>
+                    </div>
+                    <div class="btn-row" style="margin-top:6px">
+                        <button id="btn-default-corridor" class="btn btn-ghost btn-sm" style="flex:1" onclick="useDefaults()">Default Corridor</button>
+                        <button class="btn btn-ghost btn-sm" onclick="clearPoints()">Clear</button>
+                    </div>
+                </div>
+
+                <!-- Calculated Path Details -->
+                <div id="route-path-results" class="panel-card" style="display:none">
+                    <div class="card-header">
+                        <span class="card-title">CALCULATED ROUTE PATH</span>
+                        <span id="route-safety-badge" class="badge badge-safe">SAFE</span>
+                    </div>
+
+                    <div class="route-metrics-grid">
+                        <div class="metric-cell">
+                            <span class="metric-label">Total Distance</span>
+                            <span class="metric-value" id="rp-distance">—</span>
+                        </div>
+                        <div class="metric-cell">
+                            <span class="metric-label">Estimated Travel Time</span>
+                            <span class="metric-value" id="rp-eta">—</span>
+                        </div>
+                        <div class="metric-cell">
+                            <span class="metric-label">Route Risk Level</span>
+                            <span class="metric-value" id="rp-risk">—</span>
+                        </div>
+                        <div class="metric-cell">
+                            <span class="metric-label">High-Risk Segments</span>
+                            <span class="metric-value" id="rp-highsegs">—</span>
+                        </div>
+                    </div>
+
+                    <div class="route-locations-box">
+                        <div class="loc-row">
+                            <span class="loc-pin origin-pin">●</span>
+                            <span class="loc-label">Origin:</span>
+                            <span class="loc-coords" id="rp-origin-coords">—</span>
+                        </div>
+                        <div class="loc-row">
+                            <span class="loc-pin dest-pin">●</span>
+                            <span class="loc-label">Destination:</span>
+                            <span class="loc-coords" id="rp-dest-coords">—</span>
+                        </div>
+                    </div>
+
+                    <div id="rp-warning-box" class="route-warning-box" style="display:none"></div>
+                </div>
+
+                <!-- Rescue Required Box in Route Tab -->
+                <div id="rescue-banner-route" class="rescue-required-card" style="display:none">
+                    <div class="rescue-card-icon">🚨</div>
+                    <div class="rescue-card-body">
+                        <div class="rescue-card-title">NO SAFE EVACUATION ROUTE</div>
+                        <div class="rescue-card-msg">No safe route available — request rescue assistance.</div>
+                        <div class="rescue-card-sub">All accessible road paths are blocked by flood waters. Use 'Find Safe Shelter' or contact emergency dispatch.</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ── Main Map Area ────────────────────────── -->
+        <main id="map-wrapper">
+            <div id="map"></div>
+
+            <!-- Map Center Hint -->
+            <div id="map-hint">Click map to set <strong>origin</strong>, then <strong>destination</strong></div>
+
+            <!-- Area Label -->
+            <div id="area-label" class="glass-panel">Thrissur Demonstration Study Area</div>
+
+            <!-- Basemap Selector Overlay (Top Right of Map) -->
+            <div id="map-controls" class="glass-panel">
+                <div class="map-ctrl-title">BASEMAP</div>
+                <div class="map-ctrl-row">
+                    <button class="map-ctrl-btn active" id="basemap-streets" onclick="switchBasemap('streets')">Street (Dark)</button>
+                    <button class="map-ctrl-btn" id="basemap-satellite" onclick="switchBasemap('satellite')">Satellite</button>
+                </div>
+            </div>
+
+            <!-- Risk & Routing Legend (Bottom Right of Map) -->
+            <div id="legend" class="glass-panel">
+                <div class="legend-title">FLOOD & ROUTING LEGEND</div>
+                <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>Low Elevation Flood Hazard (&lt;15m)</div>
+                <div class="legend-item"><span class="legend-dot" style="background:#f97316"></span>Medium Elevation Caution (15–25m)</div>
+                <div class="legend-item"><span class="legend-dot" style="background:#10b981"></span>Safe High Ground (&gt;25m)</div>
+                <div class="legend-item" id="legend-affected" style="display:none"><span class="legend-line" style="background:#ef4444"></span>Inundated Road Corridor</div>
+                <div class="legend-item" id="legend-flood" style="display:none"><span class="legend-dot" style="background:rgba(59,130,246,0.5);border:1px solid #3b82f6"></span>Simulated Flood Zone</div>
+                <div class="legend-item"><span class="legend-line" style="background:#06b6d4"></span>Waterways / Rivers</div>
+                <div class="legend-sep"></div>
+                <div class="legend-item" title="Verified Safe Candidate Evacuation Corridor">
+                    <span class="legend-outline-line"><span class="legend-outline-inner"></span></span>
+                    <span>RouteSense (Safe)</span>
+                </div>
+                <div class="legend-item" title="Unrestricted Shortest Path (Disregards Flooding)">
+                    <span class="legend-dashed-line"></span>
+                    <span>Shortest Path</span>
+                </div>
+            </div>
+        </main>
     </div>
 
     <!-- ── Mobile Connect Modal ────────────────────── -->
     <div id="mobile-modal" class="modal-backdrop" style="display:none;" onclick="if(event.target===this)closeMobileConnectModal()">
-        <div class="modal-card glass-panel">
+        <div class="modal-card">
             <div class="modal-header">
                 <h3>📱 RouteSense Mobile Client</h3>
                 <button class="modal-close" onclick="closeMobileConnectModal()">✕</button>
             </div>
             <div class="modal-body">
-                <p>Your laptop is currently operating as the <strong>Disaster Evacuation Intelligence Server</strong>. You can use your phone as a mobile client in the field with live GPS!</p>
+                <p>Your workstation is operating as the <strong>Disaster Evacuation Intelligence Server</strong>. Connect a mobile browser on the same local network for live in-field positioning:</p>
                 <div class="qr-container">
                     <img id="mobile-qr-img" src="" alt="Scan QR Code" />
                 </div>
                 <div class="mobile-url-box">
-                    <span class="url-label">On your phone, open this address:</span>
+                    <span class="url-label">Direct Browser URL:</span>
                     <a id="mobile-url-link" href="#" target="_blank" class="url-text">http://localhost:5000</a>
                 </div>
-                <p class="modal-hint">Make sure your phone is connected to the same Wi-Fi or laptop hotspot.</p>
+                <p class="modal-hint">Ensure your mobile device is connected to the same Wi-Fi or mobile hotspot.</p>
             </div>
         </div>
     </div>
 
-    <!-- ── Area Label ──────────────────────────────── -->
-    <div id="area-label" class="glass-panel">Thrissur Demonstration Area</div>
-
-    <!-- ── Prototype Badge ─────────────────────────── -->
-    <div id="proto-badge">PROTOTYPE</div>
+    <!-- ── Prototype Watermark ──────────────────────── -->
+    <div id="proto-badge">ACADEMIC PROTOTYPE — NOT FOR REGULATORY NAVIGATION</div>
 
     <!-- ── Loading Overlay ─────────────────────────── -->
     <div id="loading-overlay">
         <div id="loading-content">
             <div class="loader"></div>
-            <div id="loading-text">Loading RouteSense AI…</div>
+            <div id="loading-text">Loading RouteSense AI Road Network & ML Model…</div>
         </div>
     </div>
 
