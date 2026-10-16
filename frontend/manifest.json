@@ -3,14 +3,24 @@
   "short_name": "RouteSense",
   "description": "Real-time risk-aware disaster evacuation navigation for Thrissur, Kerala",
   "start_url": "/",
+  "id": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#0a0f1d",
-  "theme_color": "#0ea5e9",
+  "theme_color": "#0f172a",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><circle cx='96' cy='96' r='84' fill='%230f172a' stroke='%2338bdf8' stroke-width='10'/><circle cx='96' cy='96' r='32' fill='%2338bdf8'/><path d='M96 16 L96 48 M96 144 L96 176 M16 96 L48 96 M144 96 L176 96' stroke='%2338bdf8' stroke-width='8'/></svg>",
+      "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml"
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
