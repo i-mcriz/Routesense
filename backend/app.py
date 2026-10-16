@@ -82,8 +82,9 @@ PROFILES = {
 DEFAULT_ORIGIN = [76.1798295, 10.4900642]
 DEFAULT_DEST = [76.2500925, 10.5696931]
 
-# ── Verified Emergency Relief Shelters (Thrissur Safe Spots) ──
+# ── Emergency Relief Shelters (Thrissur Evacuation Shelters & Relief Hubs) ──
 SHELTERS = [
+    # ── Verified Emergency Relief Shelters ──
     {
         "id": "sh_town_hall",
         "name": "Thrissur Town Hall Relief Center",
@@ -93,7 +94,9 @@ SHELTERS = [
         "capacity": 450,
         "contact": "0487-2331241",
         "supplies": ["Medical Aid", "Drinking Water", "Bedding", "Emergency Food"],
-        "status": "OPEN"
+        "status": "OPEN",
+        "verified": True,
+        "demo_shelter": False
     },
     {
         "id": "sh_model_boys",
@@ -104,7 +107,9 @@ SHELTERS = [
         "capacity": 600,
         "contact": "0487-2423321",
         "supplies": ["Blankets", "Baby Food", "Clean Water", "First Aid"],
-        "status": "OPEN"
+        "status": "OPEN",
+        "verified": True,
+        "demo_shelter": False
     },
     {
         "id": "sh_st_thomas",
@@ -115,7 +120,9 @@ SHELTERS = [
         "capacity": 850,
         "contact": "0487-2420435",
         "supplies": ["Ambulance Access", "Power Backup", "Dry Rations"],
-        "status": "OPEN"
+        "status": "OPEN",
+        "verified": True,
+        "demo_shelter": False
     },
     {
         "id": "sh_vimala",
@@ -126,7 +133,9 @@ SHELTERS = [
         "capacity": 700,
         "contact": "0487-2332080",
         "supplies": ["High Ground Camp", "Medical Staff", "Sanitation"],
-        "status": "OPEN"
+        "status": "OPEN",
+        "verified": True,
+        "demo_shelter": False
     },
     {
         "id": "sh_medical_college",
@@ -137,7 +146,9 @@ SHELTERS = [
         "capacity": 1200,
         "contact": "0487-2200310",
         "supplies": ["ICU & Trauma Support", "Helipad Access", "Maternity Aid"],
-        "status": "OPEN"
+        "status": "OPEN",
+        "verified": True,
+        "demo_shelter": False
     },
     {
         "id": "sh_collectorate",
@@ -148,7 +159,9 @@ SHELTERS = [
         "capacity": 900,
         "contact": "1077 (Disaster Toll-Free)",
         "supplies": ["Command Dispatch", "Food Packets", "Satellite Comms"],
-        "status": "OPEN"
+        "status": "OPEN",
+        "verified": True,
+        "demo_shelter": False
     },
     {
         "id": "sh_jubilee",
@@ -159,7 +172,271 @@ SHELTERS = [
         "capacity": 500,
         "contact": "0487-2432200",
         "supplies": ["Emergency Surgical Unit", "Oxygen Supply", "Clean Water"],
-        "status": "OPEN"
+        "status": "OPEN",
+        "verified": True,
+        "demo_shelter": False
+    },
+
+    # ── Well-Distributed Safe Prototype / Demo Shelters Across Thrissur Study Area ──
+    {
+        "id": "sh_amala",
+        "name": "Amala Institute Medical Relief Hub (Amalanagar) [Prototype]",
+        "type": "Hospital Shelter (Prototype Shelter)",
+        "coordinates": [76.1652, 10.5645],
+        "elevation": 26.0,
+        "capacity": 950,
+        "contact": "0487-2304000",
+        "supplies": ["Trauma Care", "Generators", "Surgical Facility"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_vilangan",
+        "name": "Vilangan Hill Elevated Relief Camp (Muthuvara) [Prototype]",
+        "type": "Elevated Ridge Shelter (Prototype Shelter)",
+        "coordinates": [76.1648, 10.5423],
+        "elevation": 48.0,
+        "capacity": 600,
+        "contact": "0487-2305100",
+        "supplies": ["High Ground Refuge", "Drinking Water", "Bedding"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_sobha",
+        "name": "Sobha City Area Relief Facility (Puzhakkal) [Prototype]",
+        "type": "Community Facility (Prototype Shelter)",
+        "coordinates": [76.1816, 10.5515],
+        "elevation": 18.0,
+        "capacity": 1100,
+        "contact": "0487-2308800",
+        "supplies": ["Mass Capacity", "Food Rations", "Shelter Halls"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_kottekkad",
+        "name": "St. Mary Community Relief Centre (Kottekkad) [Prototype]",
+        "type": "Educational Institution (Prototype Shelter)",
+        "coordinates": [76.1835, 10.5810],
+        "elevation": 21.0,
+        "capacity": 450,
+        "contact": "0487-2311200",
+        "supplies": ["Drinking Water", "First Aid", "Blankets"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_mulamkunnathukavu",
+        "name": "Mulamkunnathukavu Community Relief Camp [Prototype]",
+        "type": "Civic Center (Prototype Shelter)",
+        "coordinates": [76.2049, 10.5958],
+        "elevation": 28.0,
+        "capacity": 500,
+        "contact": "0487-2200220",
+        "supplies": ["Sanitation", "Dry Rations", "Ambulance Access"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_kolazhy",
+        "name": "Kolazhy Panchayat Community Shelter [Prototype]",
+        "type": "Civic Center (Prototype Shelter)",
+        "coordinates": [76.2153, 10.5741],
+        "elevation": 24.0,
+        "capacity": 550,
+        "contact": "0487-2201300",
+        "supplies": ["Emergency Water", "Bedding", "First Aid"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_pottore",
+        "name": "Pottore Community Relief Facility [Prototype]",
+        "type": "Civic Center (Prototype Shelter)",
+        "coordinates": [76.1990, 10.5683],
+        "elevation": 22.0,
+        "capacity": 400,
+        "contact": "0487-2202400",
+        "supplies": ["Clean Water", "First Aid", "Bedding"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_police_academy",
+        "name": "Police Academy Relief Facility (Ramavarmapuram) [Prototype]",
+        "type": "Administrative Facility (Prototype Shelter)",
+        "coordinates": [76.2371, 10.5562],
+        "elevation": 34.0,
+        "capacity": 1200,
+        "contact": "0487-2328100",
+        "supplies": ["Helipad Access", "High Security", "Command Center"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_kau",
+        "name": "KAU Central Campus Relief Hub (Vellanikkara) [Prototype]",
+        "type": "University Campus (Prototype Shelter)",
+        "coordinates": [76.2749, 10.5450],
+        "elevation": 36.0,
+        "capacity": 1500,
+        "contact": "0487-2438011",
+        "supplies": ["Extensive Campus", "Emergency Food", "High Elevation"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_mannuthy",
+        "name": "Don Bosco Relief Center (Mannuthy) [Prototype]",
+        "type": "Educational Institution (Prototype Shelter)",
+        "coordinates": [76.2618, 10.5333],
+        "elevation": 27.0,
+        "capacity": 750,
+        "contact": "0487-2370438",
+        "supplies": ["Large Halls", "Water Supply", "First Aid"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_nadathara",
+        "name": "Nadathara Community Relief Facility [Prototype]",
+        "type": "Civic Center (Prototype Shelter)",
+        "coordinates": [76.2572, 10.5161],
+        "elevation": 22.0,
+        "capacity": 500,
+        "contact": "0487-2371200",
+        "supplies": ["Community Hall", "Rations", "Medical Aid"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_kuttanellur",
+        "name": "Kuttanellur Govt College Relief Camp [Prototype]",
+        "type": "College Campus (Prototype Shelter)",
+        "coordinates": [76.2521, 10.4940],
+        "elevation": 25.0,
+        "capacity": 800,
+        "contact": "0487-2351233",
+        "supplies": ["Open Grounds", "Clean Water", "Bedding"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_marathakkara",
+        "name": "Marathakkara Community Relief Shelter [Prototype]",
+        "type": "Civic Center (Prototype Shelter)",
+        "coordinates": [76.2541, 10.4739],
+        "elevation": 23.0,
+        "capacity": 400,
+        "contact": "0487-2352100",
+        "supplies": ["First Aid", "Blankets", "Dry Food"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_ollur",
+        "name": "St. Anthony Relief Center (Ollur) [Prototype]",
+        "type": "Educational Institution (Prototype Shelter)",
+        "coordinates": [76.2382, 10.4783],
+        "elevation": 24.0,
+        "capacity": 650,
+        "contact": "0487-2352210",
+        "supplies": ["Auditorium", "Drinking Water", "Power Backup"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_chiyyaram",
+        "name": "Chiyyaram Community Relief Point [Prototype]",
+        "type": "Civic Center (Prototype Shelter)",
+        "coordinates": [76.2181, 10.4968],
+        "elevation": 19.0,
+        "capacity": 500,
+        "contact": "0487-2251100",
+        "supplies": ["Sanitation", "First Aid", "Food Supplies"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_koorkenchery",
+        "name": "Koorkenchery Community Relief Center [Prototype]",
+        "type": "Civic Center (Prototype Shelter)",
+        "coordinates": [76.2124, 10.5061],
+        "elevation": 18.0,
+        "capacity": 550,
+        "contact": "0487-2421500",
+        "supplies": ["Community Hall", "Emergency Food", "Bedding"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_palakkal",
+        "name": "Palakkal Community Relief Shelter [Prototype]",
+        "type": "Civic Center (Prototype Shelter)",
+        "coordinates": [76.2141, 10.4607],
+        "elevation": 17.0,
+        "capacity": 450,
+        "contact": "0487-2272300",
+        "supplies": ["Drinking Water", "Blankets", "First Aid"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_elthuruth",
+        "name": "St. Aloysius College Relief Camp (Elthuruth) [Prototype]",
+        "type": "College Campus (Prototype Shelter)",
+        "coordinates": [76.1839, 10.4948],
+        "elevation": 18.0,
+        "capacity": 700,
+        "contact": "0487-2360538",
+        "supplies": ["Large Campus", "Generators", "Clean Water"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_aranattukara",
+        "name": "Aranattukara Community Relief Facility [Prototype]",
+        "type": "Civic Center (Prototype Shelter)",
+        "coordinates": [76.1821, 10.5100],
+        "elevation": 19.0,
+        "capacity": 500,
+        "contact": "0487-2381200",
+        "supplies": ["First Aid", "Food Packets", "Sanitation"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
+    },
+    {
+        "id": "sh_kanattukara",
+        "name": "Sree Kerala Varma College Camp (Kanattukara) [Prototype]",
+        "type": "College Campus (Prototype Shelter)",
+        "coordinates": [76.2002, 10.5193],
+        "elevation": 22.0,
+        "capacity": 850,
+        "contact": "0487-2380535",
+        "supplies": ["Auditorium", "Water Storage", "Blankets"],
+        "status": "OPEN (Prototype)",
+        "verified": False,
+        "demo_shelter": True
     }
 ]
 
@@ -215,6 +492,55 @@ def haversine(a, b):
     x = math.radians(lon2 - lon1) * math.cos(lat)
     y = math.radians(lat2 - lat1)
     return 6371000 * math.sqrt(x * x + y * y)
+
+
+def is_point_in_flood(point, flood_center=None, flood_radius=2000, flood_polygon=None, flood_zones=None):
+    """Check whether a (lon, lat) point lies inside an active flood circle or flood zone polygon."""
+    if point is None:
+        return False
+    try:
+        p_lon, p_lat = float(point[0]), float(point[1])
+    except (ValueError, TypeError, IndexError):
+        return False
+
+    # 1. Circular flood check
+    if flood_center is not None and flood_radius and flood_radius > 0:
+        try:
+            c_lon, c_lat = float(flood_center[0]), float(flood_center[1])
+            if haversine((p_lon, p_lat), (c_lon, c_lat)) <= flood_radius:
+                return True
+        except (ValueError, TypeError, IndexError):
+            pass
+
+    # 2. Multi-zone and legacy flood polygon check
+    candidate_zones = []
+    if flood_zones:
+        candidate_zones.extend(flood_zones)
+    elif flood_polygon is not None and len(flood_polygon) >= 3:
+        candidate_zones.append({'polygon': flood_polygon})
+
+    if candidate_zones:
+        pt = Point(p_lon, p_lat)
+        for z in candidate_zones:
+            pts = z.get('polygon') if isinstance(z, dict) else None
+            if not pts or len(pts) < 3:
+                continue
+            try:
+                poly_coords = []
+                for p in pts:
+                    if p[0] < 20 and p[1] > 70:
+                        poly_coords.append((float(p[1]), float(p[0])))
+                    else:
+                        poly_coords.append((float(p[0]), float(p[1])))
+                sp = Polygon(poly_coords)
+                if not sp.is_valid:
+                    sp = sp.buffer(0)
+                if sp.contains(pt) or sp.distance(pt) < 1e-6:
+                    return True
+            except Exception:
+                continue
+
+    return False
 
 
 def nearest_node(G, point, node_index=None):
@@ -649,56 +975,101 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
         # Dry Condition: routesense route must strictly equal normal Dijkstra shortest route
         rs_path = normal_path
     else:
-        # Flood on Route: Attempt to route to original destination on G_passable
-        try:
-            if nx.has_path(G_passable, origin_node, dest_node):
-                cost_weight = 'distance' if objective == 'shortest' else 'routesense_cost'
-                candidate_path = nx.shortest_path(G_passable, source=origin_node, target=dest_node, weight=cost_weight)
-                is_valid = True
-                for i in range(len(candidate_path) - 1):
-                    edge_data = G_w.get_edge_data(candidate_path[i], candidate_path[i+1])
-                    if edge_data and edge_data.get('impassable', False):
-                        is_valid = False
-                        break
-                if is_valid:
-                    rs_path = candidate_path
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
-            rs_path = None
+        # Check if active flood intersects or affects normal_path, origin, or destination
+        dest_in_flood = is_point_in_flood(destination, flood_center, flood_radius, flood_polygon, flood_zones)
+        origin_in_flood = is_point_in_flood(origin, flood_center, flood_radius, flood_polygon, flood_zones)
 
-        # Flood Blocks Destination: Instant Shelter Reallocation
-        if rs_path is None and auto_reallocate:
-            try:
-                dist_dict = nx.single_source_dijkstra_path_length(G_passable, origin_node, weight='routesense_cost')
-            except Exception:
-                dist_dict = {}
+        flood_affects_normal_path = False
+        for i in range(len(normal_path) - 1):
+            u_p, v_p = normal_path[i], normal_path[i+1]
+            e_data = G_w.get_edge_data(u_p, v_p)
+            if e_data and (e_data.get('flood_penalty', 0) > 0 or e_data.get('impassable', False)):
+                flood_affects_normal_path = True
+                break
+            mid_e = ((u_p[0] + v_p[0]) * 0.5, (u_p[1] + v_p[1]) * 0.5)
+            if is_point_in_flood(mid_e, flood_center, flood_radius, flood_polygon, flood_zones):
+                flood_affects_normal_path = True
+                break
 
-            best_sh = None
-            min_sh_cost = float('inf')
-            for sh in SHELTERS:
-                sh_coords = sh['coordinates']
-                # Exclude shelter if within flood epicenter
-                if flood_center and haversine(sh_coords, flood_center) < flood_radius:
-                    continue
-                sh_node, _ = nearest_node(G_BASE, tuple(sh_coords))
-                if sh_node in dist_dict:
-                    cost = dist_dict[sh_node]
-                    if cost < min_sh_cost:
-                        min_sh_cost = cost
-                        best_sh = sh
-
-            if best_sh:
-                sh_node, _ = nearest_node(G_BASE, tuple(best_sh['coordinates']))
+        if not dest_in_flood and not origin_in_flood and not flood_affects_normal_path:
+            # When active flood is far away and does not affect the route or endpoints:
+            # Use the shortest valid road route directly with zero unnecessary detours
+            rs_path = normal_path
+        else:
+            # Flood affects route or endpoints:
+            # Attempt to route to original destination on G_passable only if destination itself is safe
+            if not dest_in_flood:
                 try:
-                    sh_path = nx.shortest_path(G_passable, source=origin_node, target=sh_node, weight='routesense_cost')
-                    rs_path = sh_path
-                    reallocated = True
-                    reallocated_shelter = best_sh
-                    reallocation_reason = f"Primary destination blocked by flood hazard. Automatically reallocated to closest safe shelter: {best_sh['name']}."
-                except Exception:
+                    if nx.has_path(G_passable, origin_node, dest_node):
+                        cost_weight = 'distance' if objective == 'shortest' else 'routesense_cost'
+                        candidate_path = nx.shortest_path(G_passable, source=origin_node, target=dest_node, weight=cost_weight)
+                        is_valid = True
+                        for i in range(len(candidate_path) - 1):
+                            edge_data = G_w.get_edge_data(candidate_path[i], candidate_path[i+1])
+                            if edge_data and edge_data.get('impassable', False):
+                                is_valid = False
+                                break
+                        if is_valid:
+                            rs_path = candidate_path
+                except (nx.NetworkXNoPath, nx.NodeNotFound):
                     rs_path = None
 
-        if rs_path is None:
-            rs_error = "No route satisfying the configured safety constraints is available. No safe route available — request rescue assistance."
+            # Flood Blocks Destination or makes it unsafe: Instant Shelter Reallocation
+            if rs_path is None and auto_reallocate:
+                try:
+                    dist_dict, path_dict = nx.single_source_dijkstra(G_passable, origin_node, weight='routesense_cost')
+                except Exception:
+                    dist_dict, path_dict = {}, {}
+
+                safe_shelter_candidates = []
+                for sh in SHELTERS:
+                    sh_coords = sh['coordinates']
+                    # Exclude shelter if within flood epicenter or flood zone
+                    if is_point_in_flood(sh_coords, flood_center, flood_radius, flood_polygon, flood_zones):
+                        continue
+                    sh_node, _ = nearest_node(G_BASE, tuple(sh_coords))
+                    if sh_node is None or sh_node not in path_dict:
+                        continue
+
+                    cand_path = path_dict[sh_node]
+                    # Validate path: strictly excludes impassable roads
+                    path_valid = True
+                    road_dist = 0.0
+                    high_count = 0
+                    for k in range(len(cand_path) - 1):
+                        e = G_w.get_edge_data(cand_path[k], cand_path[k+1])
+                        if not e or e.get('impassable', False):
+                            path_valid = False
+                            break
+                        road_dist += e['distance']
+                        if e.get('effective_risk', e['predicted_risk']) == 2:
+                            high_count += 1
+
+                    if path_valid:
+                        safe_shelter_candidates.append({
+                            'shelter': sh,
+                            'path': cand_path,
+                            'road_dist': road_dist,
+                            'high_count': high_count,
+                            'id': sh['id']
+                        })
+
+                if safe_shelter_candidates:
+                    # Sort prioritizing safety (lowest high-risk segments), then road-network distance, then stable ID
+                    safe_shelter_candidates.sort(key=lambda s: (s['high_count'], s['road_dist'], s['id']))
+                    best_match = safe_shelter_candidates[0]
+                    best_sh = best_match['shelter']
+                    rs_path = best_match['path']
+                    reallocated = True
+                    reallocated_shelter = best_sh
+                    dist_km = round(best_match['road_dist'] / 1000.0, 2)
+                    reallocation_reason = (
+                        f"Primary destination blocked by flood hazard. "
+                        f"Automatically reallocated to closest safe shelter: {best_sh['name']} ({dist_km} km)."
+                    )
+
+            if rs_path is None:
+                rs_error = "No route satisfying the configured safety constraints is available. No safe route available — request rescue assistance."
 
     def extract_metrics(path, graph, use_effective=False):
         total_dist = 0
@@ -966,26 +1337,8 @@ def reroute_shelter():
         if is_same_as_current:
             continue
 
-        if flood_center:
-            d_center = haversine(sh_coords, flood_center)
-            if d_center < flood_radius:
-                continue
-
-        if flood_zones:
-            sh_pt = Point(sh_coords[0], sh_coords[1])
-            is_submerged = False
-            for z in flood_zones:
-                if z.get('intensity', 0.5) > 0.3 and z.get('polygon'):
-                    try:
-                        pts = z['polygon']
-                        z_coords = [(float(p[1]), float(p[0])) if (p[0] < 20 and p[1] > 70) else (float(p[0]), float(p[1])) for p in pts]
-                        z_poly = Polygon(z_coords)
-                        if z_poly.contains(sh_pt):
-                            is_submerged = True
-                            break
-                    except Exception:
-                        pass
-            if is_submerged:
+        if flood_center or flood_zones or flood_polygon:
+            if is_point_in_flood(sh_coords, flood_center, flood_radius, flood_polygon, flood_zones):
                 continue
 
         alt_route = run_routing(
@@ -1091,9 +1444,8 @@ def nearest_shelter():
     for sh in SHELTERS:
         sh_coords = sh['coordinates']
         # Check if shelter is submerged
-        if flood_active and flood_center:
-            if haversine(sh_coords, flood_center) < flood_radius:
-                continue
+        if flood_active and is_point_in_flood(sh_coords, flood_center, flood_radius, flood_polygon, flood_zones):
+            continue
 
         sh_node, _ = nearest_node(G_BASE, tuple(sh_coords))
         if sh_node in dist_dict:
@@ -1118,6 +1470,19 @@ def nearest_shelter():
         flood_intensity=flood_intensity, water_level=water_level,
         flood_polygon=flood_polygon, flood_zones=flood_zones
     )
+
+    if flood_active and route_data.get('routesense') is None and len(ranked) > 1:
+        for alt_sh in ranked[1:]:
+            alt_route = run_routing(
+                origin, alt_sh['coordinates'], profile,
+                flood_center=flood_center, flood_radius=flood_radius,
+                flood_intensity=flood_intensity, water_level=water_level,
+                flood_polygon=flood_polygon, flood_zones=flood_zones
+            )
+            if alt_route.get('routesense') is not None:
+                best_shelter = alt_sh
+                route_data = alt_route
+                break
 
     return jsonify({
         "best_shelter": best_shelter,

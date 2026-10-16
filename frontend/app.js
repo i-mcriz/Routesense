@@ -58,6 +58,7 @@ let routeAnimInterval = null;
 let routeParticles = [];
 let affectedRoadPolylines = [];
 let shelterMarkers = [];
+let sheltersData = [];
 
 // Semantic Risk Colors
 const RISK_COLORS = { 0: '#10b981', 1: '#fbbf24', 2: '#ef4444' };
@@ -69,7 +70,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     setupUIEventListeners();
     await Promise.all([
         loadRiskMap(),
-        loadRivers()
+        loadRivers(),
+        loadShelters()
     ]);
     setStatus('ok', 'READY: Thrissur Road Network Active');
     hideLoading();
@@ -276,12 +278,9 @@ function onMapClick(e) {
     // 1. Explicit Origin Selection
     if (clickMode === 'origin') {
         setOrigin(lng, lat);
-        clickMode = 'dest';
+        clickMode = null;
         const hint = document.getElementById('map-hint');
-        if (hint) {
-            hint.classList.remove('hidden');
-            hint.innerHTML = 'Click map to set <strong>destination</strong>';
-        }
+        if (hint) hint.classList.add('hidden');
         return;
     }
 
@@ -366,20 +365,24 @@ function clearPoints() {
     if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
     originCoord = null;
     destCoord = null;
-    clickMode = 'origin';
+    clickMode = null;
 
     document.getElementById('origin-display').textContent = 'Click map or use default';
     document.getElementById('dest-display').textContent = 'Click map or use default';
     document.getElementById('origin-display').classList.remove('set');
     document.getElementById('dest-display').classList.remove('set');
+    const rpOrigin = document.getElementById('rp-origin-coords');
+    if (rpOrigin) rpOrigin.textContent = '—';
+    const rpDest = document.getElementById('rp-dest-coords');
+    if (rpDest) rpDest.textContent = '—';
 
     const hint = document.getElementById('map-hint');
     if (hint) {
-        hint.classList.remove('hidden');
-        hint.innerHTML = 'Click map to set <strong>origin</strong>, then <strong>destination</strong>';
+        hint.classList.add('hidden');
     }
     clearRoutes();
     updateStatusDashboard(null, latestSimData);
+    setStatus('ok', 'ROUTING POINTS CLEARED');
 }
 
 // ── WINDOW 1: Flood Simulation Controls ───────────────────
@@ -878,19 +881,8 @@ function debounceSimulate() {
 
 async function simulateFlood(fromPlayback = false) {
     if (floodMode === 'circle' && !floodCenter) {
-        let center = null;
-        if (latestRouteData?.routesense?.coordinates?.length) {
-            const coords = latestRouteData.routesense.coordinates;
-            center = coords[Math.floor(coords.length / 2)];
-        } else if (latestRouteData?.normal?.coordinates?.length) {
-            const coords = latestRouteData.normal.coordinates;
-            center = coords[Math.floor(coords.length / 2)];
-        } else if (originCoord && destCoord) {
-            center = [(originCoord[0] + destCoord[0]) / 2, (originCoord[1] + destCoord[1]) / 2];
-        } else {
-            center = [76.2150, 10.5300];
-        }
-        setFloodCenter(center[0], center[1]);
+        if (!fromPlayback) setStatus('info', 'PLACE FLOOD EPICENTER ON MAP TO SIMULATE');
+        return;
     }
 
     const floodPayload = buildFloodPayload();
@@ -1107,9 +1099,16 @@ function selectObjective(obj) {
 }
 
 async function findRoute(silent = false) {
-    if (!originCoord || !destCoord) {
-        useDefaults();
+    if (!destCoord) {
+        if (!silent) {
+            setStatus('info', 'SELECT AN EVACUATION DESTINATION ON MAP OR CLICK FIND SAFE SHELTER');
+            setClickMode('dest');
+        }
         return;
+    }
+
+    if (!originCoord) {
+        setOrigin(76.1798, 10.4900);
     }
 
     const currentReqId = ++routeRequestId;
@@ -1140,11 +1139,14 @@ async function findRoute(silent = false) {
         // Discard out-of-order stale response
         if (currentReqId !== routeRequestId) return;
 
-        // Instant Shelter Reallocation if destination was blocked
+        // Instant Shelter Reallocation if destination was blocked or unsafe
         if (data.reallocated && data.reallocated_shelter) {
             const sh = data.reallocated_shelter;
             setDestination(sh.coordinates[0], sh.coordinates[1], `🛡️ ${sh.name}`);
             setStatus('caution', `DESTINATION BLOCKED: REALLOCATED TO 🛡️ ${sh.name.toUpperCase()}`);
+            if (sheltersData && sheltersData.length > 0) {
+                renderShelterMarkers(sheltersData, sh.id);
+            }
         }
 
         latestRouteData = data;
@@ -1183,6 +1185,11 @@ function clearRoutes() {
 
 function renderRoutes(data) {
     clearRoutes();
+
+    // If no safe route exists, do not display a route that falsely appears safe
+    if (!data.routesense?.coordinates || data.routesense.coordinates.length === 0) {
+        return;
+    }
 
     // 1. Base unrestricted route (dashed blue #38bdf8) for reference
     if (data.normal?.coordinates) {
@@ -1484,6 +1491,62 @@ function updateStatusDashboard(routeData, simData) {
 }
 
 // ── Shelter Discovery Integration ─────────────────────────
+async function loadShelters() {
+    try {
+        const res = await fetch(`${API}/api/shelters`);
+        if (!res.ok) return;
+        const data = await res.json();
+        sheltersData = data.shelters || [];
+        renderShelterMarkers(sheltersData);
+    } catch (e) {
+        console.error('Failed to load shelters:', e);
+    }
+}
+
+function selectShelterDestination(shelterId) {
+    if (!sheltersData) return;
+    const sh = sheltersData.find(s => s.id === shelterId);
+    if (!sh) return;
+    if (!originCoord) {
+        setOrigin(76.1798, 10.4900);
+    }
+    setDestination(sh.coordinates[0], sh.coordinates[1], `🛡️ ${sh.name}`);
+    renderShelterMarkers(sheltersData, sh.id);
+    findRoute();
+}
+
+function renderShelterMarkers(shelters, targetShelterId = null) {
+    if (!shelterMarkersLayer) return;
+    shelterMarkersLayer.clearLayers();
+    shelterMarkers = [];
+
+    shelters.forEach(sh => {
+        const isTarget = targetShelterId ? sh.id === targetShelterId : false;
+        const m = L.circleMarker([sh.coordinates[1], sh.coordinates[0]], {
+            radius: isTarget ? 12 : 7,
+            color: '#ffffff',
+            weight: isTarget ? 3 : 1.5,
+            fillColor: isTarget ? '#10b981' : (sh.status === 'UNSAFE' || sh.status === 'BLOCKED' ? '#ef4444' : '#64748b'),
+            fillOpacity: 0.95
+        }).addTo(shelterMarkersLayer);
+
+        const distStr = sh.road_distance_km ? `<br>Road Distance: <strong>${sh.road_distance_km} km</strong>` : '';
+        const isDemoStr = sh.demo_shelter ? '<br><span style="color:#94a3b8;font-size:11px">Prototype / Demo Shelter</span>' : '';
+        m.bindPopup(
+            `<strong>🛡️ ${sh.name}</strong>` +
+            distStr +
+            `<br>Elevation: <strong>${sh.elevation} m</strong> (High Ground)` +
+            `<br>Capacity: ${sh.capacity} persons` +
+            `<br>Type: ${sh.type}` +
+            `<br>Contact: ${sh.contact}` +
+            isDemoStr +
+            `<br><button class="btn btn-action-xs" style="margin-top:6px;width:100%" onclick="selectShelterDestination('${sh.id}')">🎯 Evacuate Here</button>`
+        );
+        if (isTarget) m.openPopup();
+        shelterMarkers.push(m);
+    });
+}
+
 async function findNearestSafeSpot() {
     const btn = document.getElementById('btn-find-safe-spot');
     btn.disabled = true;
@@ -1491,8 +1554,10 @@ async function findNearestSafeSpot() {
     setStatus('info', 'EVALUATING ACCESSIBLE SAFE SHELTERS BY ROAD DISTANCE');
 
     try {
-        if (!originCoord) useDefaults();
-        const startPt = originCoord || [76.1798, 10.4900];
+        if (!originCoord) {
+            setOrigin(76.1798, 10.4900);
+        }
+        const startPt = originCoord;
 
         const payload = {
             origin: startPt,
@@ -1516,28 +1581,12 @@ async function findNearestSafeSpot() {
 
         const bestShelter = data.best_shelter;
         const allShelters = data.all_shelters || [];
+        if (allShelters.length > 0) {
+            sheltersData = allShelters;
+        }
 
         // Render shelters on map
-        shelterMarkersLayer.clearLayers();
-        allShelters.forEach(sh => {
-            const isTarget = sh.id === bestShelter.id;
-            const m = L.circleMarker([sh.coordinates[1], sh.coordinates[0]], {
-                radius: isTarget ? 12 : 7,
-                color: '#ffffff',
-                weight: isTarget ? 3 : 1.5,
-                fillColor: isTarget ? '#10b981' : '#64748b',
-                fillOpacity: 0.95
-            }).addTo(shelterMarkersLayer);
-
-            m.bindPopup(
-                `<strong>🛡️ ${sh.name}</strong><br>` +
-                `Road Distance: <strong>${sh.road_distance_km} km</strong><br>` +
-                `Elevation: <strong>${sh.elevation} m</strong> (High Ground)<br>` +
-                `Capacity: ${sh.capacity} persons<br>` +
-                `Contact: ${sh.contact}`
-            );
-            if (isTarget) m.openPopup();
-        });
+        renderShelterMarkers(allShelters.length > 0 ? allShelters : sheltersData, bestShelter.id);
 
         // Set destination to this shelter and route
         setDestination(bestShelter.coordinates[0], bestShelter.coordinates[1], `🛡️ ${bestShelter.name}`);
