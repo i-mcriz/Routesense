@@ -500,6 +500,8 @@ def is_point_in_flood(point, flood_center=None, flood_radius=2000, flood_polygon
         return False
     try:
         p_lon, p_lat = float(point[0]), float(point[1])
+        if p_lon < 20 and p_lat > 70:
+            p_lon, p_lat = p_lat, p_lon
     except (ValueError, TypeError, IndexError):
         return False
 
@@ -507,6 +509,8 @@ def is_point_in_flood(point, flood_center=None, flood_radius=2000, flood_polygon
     if flood_center is not None and flood_radius and flood_radius > 0:
         try:
             c_lon, c_lat = float(flood_center[0]), float(flood_center[1])
+            if c_lon < 20 and c_lat > 70:
+                c_lon, c_lat = c_lat, c_lon
             if haversine((p_lon, p_lat), (c_lon, c_lat)) <= flood_radius:
                 return True
         except (ValueError, TypeError, IndexError):
@@ -541,6 +545,38 @@ def is_point_in_flood(point, flood_center=None, flood_radius=2000, flood_polygon
                 continue
 
     return False
+
+
+def get_origin_flood_zone(point, flood_center, flood_radius):
+    """
+    Determine which concentric zone of the flood circle a point falls in.
+    The flood circle is visually split into 3 rings on the frontend:
+        - Inner circle:       0% to 50% of radius  (most dangerous, fully submerged)
+        - Intermediate circle: 50% to 75% of radius (moderate risk)
+        - Outer circle:       75% to 100% of radius (lower risk, evacuation possible)
+    Returns 'inner', 'intermediate', 'outer', or None (outside circle).
+    """
+    if point is None or flood_center is None or not flood_radius or flood_radius <= 0:
+        return None
+    try:
+        p_lon, p_lat = float(point[0]), float(point[1])
+        if p_lon < 20 and p_lat > 70:
+            p_lon, p_lat = p_lat, p_lon
+        c_lon, c_lat = float(flood_center[0]), float(flood_center[1])
+        if c_lon < 20 and c_lat > 70:
+            c_lon, c_lat = c_lat, c_lon
+        dist = haversine((p_lon, p_lat), (c_lon, c_lat))
+        if dist > flood_radius:
+            return None
+        ratio = dist / flood_radius  # 0.0 at center, 1.0 at edge
+        if ratio <= 0.50:
+            return 'inner'
+        elif ratio <= 0.75:
+            return 'intermediate'
+        else:
+            return 'outer'
+    except (ValueError, TypeError, IndexError):
+        return None
 
 
 def nearest_node(G, point, node_index=None):
@@ -823,6 +859,7 @@ def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
         flood_penalty_val = 0.0
         is_impassable = False
 
+        in_flood_geom = False
         if has_any_flood:
             e_minx = u[0] if u[0] < v[0] else v[0]
             e_maxx = u[0] if u[0] > v[0] else v[0]
@@ -970,82 +1007,273 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
     reallocated = False
     reallocated_shelter = None
     reallocation_reason = None
+    orig_zone = None
 
     if not flood_active:
         # Dry Condition: routesense route must strictly equal normal Dijkstra shortest route
         rs_path = normal_path
     else:
-        # Check if active flood intersects or affects normal_path, origin, or destination
-        dest_in_flood = is_point_in_flood(destination, flood_center, flood_radius, flood_polygon, flood_zones)
-        origin_in_flood = is_point_in_flood(origin, flood_center, flood_radius, flood_polygon, flood_zones)
+        # ── 1. Determine origin flood circle zone (inner: 0-50%, intermediate: 50-75%, outer: 75-100%) ──
+        if flood_center is not None and flood_radius and flood_radius > 0:
+            z1 = get_origin_flood_zone(origin, flood_center, flood_radius)
+            z2 = get_origin_flood_zone(origin_node, flood_center, flood_radius)
+            if z1 == 'inner' or z2 == 'inner':
+                orig_zone = 'inner'
+            elif z1 == 'intermediate' or z2 == 'intermediate':
+                orig_zone = 'intermediate'
+            elif z1 == 'outer' or z2 == 'outer':
+                orig_zone = 'outer'
 
-        flood_affects_normal_path = False
-        for i in range(len(normal_path) - 1):
-            u_p, v_p = normal_path[i], normal_path[i+1]
-            e_data = G_w.get_edge_data(u_p, v_p)
-            if e_data and (e_data.get('flood_penalty', 0) > 0 or e_data.get('impassable', False)):
-                flood_affects_normal_path = True
-                break
-            mid_e = ((u_p[0] + v_p[0]) * 0.5, (u_p[1] + v_p[1]) * 0.5)
-            if is_point_in_flood(mid_e, flood_center, flood_radius, flood_polygon, flood_zones):
-                flood_affects_normal_path = True
-                break
+        if orig_zone is None and (flood_polygon or flood_zones):
+            if is_point_in_flood(origin, None, 0, flood_polygon, flood_zones) or \
+               is_point_in_flood(origin_node, None, 0, flood_polygon, flood_zones):
+                orig_zone = 'inner'
 
-        if not dest_in_flood and not origin_in_flood and not flood_affects_normal_path:
-            # When active flood is far away and does not affect the route or endpoints:
-            # Use the shortest valid road route directly with zero unnecessary detours
-            rs_path = normal_path
+        # Check if all connected edges to origin_node in G_w are impassable
+        if orig_zone is None and origin_node is not None and origin_node in G_w:
+            orig_edges = G_w[origin_node]
+            if len(orig_edges) > 0 and all(G_w[origin_node][nbr].get('impassable', False) for nbr in orig_edges):
+                orig_zone = 'inner'
+
+        dest_in_flood = is_point_in_flood(destination, flood_center, flood_radius, flood_polygon, flood_zones) or \
+                        (dest_node is not None and is_point_in_flood(dest_node, flood_center, flood_radius, flood_polygon, flood_zones))
+
+        def is_edge_in_inner_flood(u_e, v_e):
+            if G_w[u_e][v_e].get('impassable', False):
+                return True
+            mid_e = ((u_e[0] + v_e[0]) * 0.5, (u_e[1] + v_e[1]) * 0.5)
+            if flood_center is not None and flood_radius and flood_radius > 0:
+                inner_r = flood_radius * 0.50
+                c = tuple(flood_center)
+                if haversine(mid_e, c) <= inner_r or haversine(u_e, c) <= inner_r or haversine(v_e, c) <= inner_r:
+                    return True
+            if flood_polygon or flood_zones:
+                if is_point_in_flood(mid_e, None, 0, flood_polygon, flood_zones) or \
+                   is_point_in_flood(u_e, None, 0, flood_polygon, flood_zones) or \
+                   is_point_in_flood(v_e, None, 0, flood_polygon, flood_zones):
+                    return True
+            return False
+
+        def is_edge_in_full_flood(u_e, v_e):
+            if G_w[u_e][v_e].get('impassable', False):
+                return True
+            mid_e = ((u_e[0] + v_e[0]) * 0.5, (u_e[1] + v_e[1]) * 0.5)
+            return is_point_in_flood(mid_e, flood_center, flood_radius, flood_polygon, flood_zones) or \
+                   is_point_in_flood(u_e, flood_center, flood_radius, flood_polygon, flood_zones) or \
+                   is_point_in_flood(v_e, flood_center, flood_radius, flood_polygon, flood_zones)
+
+        if orig_zone == 'inner':
+            # ── Zone 1: Inner Circle (Submerged) ──────────────────────────
+            # When origin is inside inner circle, no route must be shown and alert displayed
+            rs_path = None
+            reallocated = False
+            reallocated_shelter = None
+            rs_error = "No route satisfying the configured safety constraints is available. no safe route is available  requesting for rescue"
+
+        elif orig_zone == 'intermediate':
+            # ── Zone 2: Intermediate Circle ───────────────────────────────
+            # Show a low risk route if available and nearby; shelter must be nearby with low risk factor
+            inter_safe_edges = [(u, v) for u, v in passable_edges if not is_edge_in_inner_flood(u, v)]
+            G_inter_safe = G_w.edge_subgraph(inter_safe_edges)
+
+            try:
+                dist_dict, path_dict = nx.single_source_dijkstra(G_inter_safe, origin_node, weight='routesense_cost')
+            except Exception:
+                dist_dict, path_dict = {}, {}
+
+            cand_dest_path = None
+            dest_high = 999
+            if not dest_in_flood and dest_node in path_dict:
+                cand_dest_path = path_dict[dest_node]
+                dest_high = sum(1 for k in range(len(cand_dest_path)-1)
+                                if G_w.get_edge_data(cand_dest_path[k], cand_dest_path[k+1]).get('effective_risk', 0) == 2)
+
+            # Find safe shelters outside flood
+            safe_shelter_candidates = []
+            for sh in SHELTERS:
+                sh_coords = sh['coordinates']
+                if is_point_in_flood(sh_coords, flood_center, flood_radius, flood_polygon, flood_zones):
+                    continue
+                sh_node, _ = nearest_node(G_BASE, tuple(sh_coords))
+                if sh_node is None or is_point_in_flood(sh_node, flood_center, flood_radius, flood_polygon, flood_zones):
+                    continue
+                if sh_node not in path_dict:
+                    continue
+
+                c_path = path_dict[sh_node]
+                r_dist = 0.0
+                h_cnt = 0
+                for k in range(len(c_path)-1):
+                    e_dt = G_w.get_edge_data(c_path[k], c_path[k+1])
+                    r_dist += e_dt['distance']
+                    if e_dt.get('effective_risk', e_dt['predicted_risk']) == 2:
+                        h_cnt += 1
+
+                safe_shelter_candidates.append({
+                    'shelter': sh,
+                    'path': c_path,
+                    'road_dist': r_dist,
+                    'high_count': h_cnt,
+                    'id': sh['id']
+                })
+
+            if safe_shelter_candidates:
+                # Rank shelters nearby to origin with low risk factor (lowest high_count, then closest road distance)
+                safe_shelter_candidates.sort(key=lambda s: (s['high_count'], s['road_dist'], s['id']))
+
+            # A low-risk route must have minimal hazard segments and be nearby
+            best_match = safe_shelter_candidates[0] if safe_shelter_candidates else None
+            is_shelter_low_risk_nearby = best_match and best_match['high_count'] <= 3 and best_match['road_dist'] <= 15000
+            is_dest_low_risk_nearby = cand_dest_path and dest_high <= 3 and not dest_in_flood
+
+            if is_dest_low_risk_nearby and not auto_reallocate:
+                rs_path = cand_dest_path
+            elif is_shelter_low_risk_nearby and (dest_in_flood or auto_reallocate or not is_dest_low_risk_nearby):
+                best_sh = best_match['shelter']
+                rs_path = best_match['path']
+                reallocated = True
+                reallocated_shelter = best_sh
+                dist_km = round(best_match['road_dist'] / 1000.0, 2)
+                reallocation_reason = (
+                    f"Origin in intermediate flood zone. "
+                    f"Low-risk route established to nearby safe shelter: {best_sh['name']} ({dist_km} km)."
+                )
+            elif is_dest_low_risk_nearby:
+                rs_path = cand_dest_path
+            else:
+                # No low-risk route available nearby
+                rs_path = None
+                rs_error = "No route satisfying the configured safety constraints is available. no safe route is available  requesting for rescue"
+
+        elif orig_zone == 'outer':
+            # ── Zone 3: Outer Circle ──────────────────────────────────────
+            # Show an accessible safe route to shelter point or destination; shelter nearby to origin with low risk
+            outer_safe_edges = [(u, v) for u, v in passable_edges if not is_edge_in_inner_flood(u, v)]
+            G_outer_safe = G_w.edge_subgraph(outer_safe_edges)
+
+            try:
+                dist_dict, path_dict = nx.single_source_dijkstra(G_outer_safe, origin_node, weight='routesense_cost')
+            except Exception:
+                dist_dict, path_dict = {}, {}
+
+            cand_dest_path = None
+            dest_high = 999
+            if not dest_in_flood and dest_node in path_dict:
+                cand_dest_path = path_dict[dest_node]
+                dest_high = sum(1 for k in range(len(cand_dest_path)-1)
+                                if G_w.get_edge_data(cand_dest_path[k], cand_dest_path[k+1]).get('effective_risk', 0) == 2)
+
+            safe_shelter_candidates = []
+            for sh in SHELTERS:
+                sh_coords = sh['coordinates']
+                if is_point_in_flood(sh_coords, flood_center, flood_radius, flood_polygon, flood_zones):
+                    continue
+                sh_node, _ = nearest_node(G_BASE, tuple(sh_coords))
+                if sh_node is None or is_point_in_flood(sh_node, flood_center, flood_radius, flood_polygon, flood_zones):
+                    continue
+                if sh_node not in path_dict:
+                    continue
+
+                c_path = path_dict[sh_node]
+                r_dist = 0.0
+                h_cnt = 0
+                for k in range(len(c_path)-1):
+                    e_dt = G_w.get_edge_data(c_path[k], c_path[k+1])
+                    r_dist += e_dt['distance']
+                    if e_dt.get('effective_risk', e_dt['predicted_risk']) == 2:
+                        h_cnt += 1
+
+                safe_shelter_candidates.append({
+                    'shelter': sh,
+                    'path': c_path,
+                    'road_dist': r_dist,
+                    'high_count': h_cnt,
+                    'id': sh['id']
+                })
+
+            if safe_shelter_candidates:
+                # Prioritize low risk factor first (lowest high_count), then nearby road distance
+                safe_shelter_candidates.sort(key=lambda s: (s['high_count'], s['road_dist'], s['id']))
+
+            if cand_dest_path and dest_high == 0 and not dest_in_flood and not auto_reallocate:
+                rs_path = cand_dest_path
+            elif safe_shelter_candidates and (dest_in_flood or auto_reallocate or dest_high > 0 or not cand_dest_path):
+                best_match = safe_shelter_candidates[0]
+                best_sh = best_match['shelter']
+                rs_path = best_match['path']
+                reallocated = True
+                reallocated_shelter = best_sh
+                dist_km = round(best_match['road_dist'] / 1000.0, 2)
+                reallocation_reason = (
+                    f"Origin in outer flood zone. "
+                    f"Accessible safe route established to nearby safe shelter: {best_sh['name']} ({dist_km} km)."
+                )
+            elif cand_dest_path:
+                rs_path = cand_dest_path
+            else:
+                rs_path = None
+                rs_error = "No route satisfying the configured safety constraints is available. no safe route is available  requesting for rescue"
+
         else:
-            # Flood affects route or endpoints:
-            # Attempt to route to original destination on G_passable only if destination itself is safe
-            if not dest_in_flood:
-                try:
-                    if nx.has_path(G_passable, origin_node, dest_node):
-                        cost_weight = 'distance' if objective == 'shortest' else 'routesense_cost'
-                        candidate_path = nx.shortest_path(G_passable, source=origin_node, target=dest_node, weight=cost_weight)
-                        is_valid = True
-                        for i in range(len(candidate_path) - 1):
-                            edge_data = G_w.get_edge_data(candidate_path[i], candidate_path[i+1])
-                            if edge_data and edge_data.get('impassable', False):
-                                is_valid = False
-                                break
-                        if is_valid:
+            # ── Zone 4: Outside Flood Circle ──────────────────────────────
+            # Detour around the entire flood circle and polygon on G_safe
+            safe_edges = [(u, v) for u, v in passable_edges if not is_edge_in_full_flood(u, v)]
+            G_safe = G_w.edge_subgraph(safe_edges)
+
+            flood_affects_normal_path = False
+            for i in range(len(normal_path) - 1):
+                u_p, v_p = normal_path[i], normal_path[i+1]
+                e_data = G_w.get_edge_data(u_p, v_p)
+                if e_data and (e_data.get('flood_penalty', 0) > 0 or e_data.get('impassable', False)):
+                    flood_affects_normal_path = True
+                    break
+                mid_e = ((u_p[0] + v_p[0]) * 0.5, (u_p[1] + v_p[1]) * 0.5)
+                if is_point_in_flood(mid_e, flood_center, flood_radius, flood_polygon, flood_zones) or \
+                   is_point_in_flood(u_p, flood_center, flood_radius, flood_polygon, flood_zones) or \
+                   is_point_in_flood(v_p, flood_center, flood_radius, flood_polygon, flood_zones):
+                    flood_affects_normal_path = True
+                    break
+
+            if not dest_in_flood and not flood_affects_normal_path:
+                # Dry / unaffected path: use normal shortest path
+                rs_path = normal_path
+            else:
+                if not dest_in_flood:
+                    try:
+                        if nx.has_path(G_safe, origin_node, dest_node):
+                            cost_weight = 'distance' if objective == 'shortest' else 'routesense_cost'
+                            candidate_path = nx.shortest_path(G_safe, source=origin_node, target=dest_node, weight=cost_weight)
                             rs_path = candidate_path
-                except (nx.NetworkXNoPath, nx.NodeNotFound):
-                    rs_path = None
+                    except (nx.NetworkXNoPath, nx.NodeNotFound):
+                        rs_path = None
 
-            # Flood Blocks Destination or makes it unsafe: Instant Shelter Reallocation
-            if rs_path is None and auto_reallocate:
-                try:
-                    dist_dict, path_dict = nx.single_source_dijkstra(G_passable, origin_node, weight='routesense_cost')
-                except Exception:
-                    dist_dict, path_dict = {}, {}
+                if rs_path is None and auto_reallocate:
+                    try:
+                        dist_dict, path_dict = nx.single_source_dijkstra(G_safe, origin_node, weight='routesense_cost')
+                    except Exception:
+                        dist_dict, path_dict = {}, {}
 
-                safe_shelter_candidates = []
-                for sh in SHELTERS:
-                    sh_coords = sh['coordinates']
-                    # Exclude shelter if within flood epicenter or flood zone
-                    if is_point_in_flood(sh_coords, flood_center, flood_radius, flood_polygon, flood_zones):
-                        continue
-                    sh_node, _ = nearest_node(G_BASE, tuple(sh_coords))
-                    if sh_node is None or sh_node not in path_dict:
-                        continue
+                    safe_shelter_candidates = []
+                    for sh in SHELTERS:
+                        sh_coords = sh['coordinates']
+                        if is_point_in_flood(sh_coords, flood_center, flood_radius, flood_polygon, flood_zones):
+                            continue
+                        sh_node, _ = nearest_node(G_BASE, tuple(sh_coords))
+                        if sh_node is None or is_point_in_flood(sh_node, flood_center, flood_radius, flood_polygon, flood_zones):
+                            continue
+                        if sh_node not in path_dict:
+                            continue
 
-                    cand_path = path_dict[sh_node]
-                    # Validate path: strictly excludes impassable roads
-                    path_valid = True
-                    road_dist = 0.0
-                    high_count = 0
-                    for k in range(len(cand_path) - 1):
-                        e = G_w.get_edge_data(cand_path[k], cand_path[k+1])
-                        if not e or e.get('impassable', False):
-                            path_valid = False
-                            break
-                        road_dist += e['distance']
-                        if e.get('effective_risk', e['predicted_risk']) == 2:
-                            high_count += 1
+                        cand_path = path_dict[sh_node]
+                        road_dist = 0.0
+                        high_count = 0
+                        for k in range(len(cand_path) - 1):
+                            u_k, v_k = cand_path[k], cand_path[k+1]
+                            e = G_w.get_edge_data(u_k, v_k)
+                            road_dist += e['distance']
+                            if e.get('effective_risk', e['predicted_risk']) == 2:
+                                high_count += 1
 
-                    if path_valid:
                         safe_shelter_candidates.append({
                             'shelter': sh,
                             'path': cand_path,
@@ -1054,22 +1282,21 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
                             'id': sh['id']
                         })
 
-                if safe_shelter_candidates:
-                    # Sort prioritizing safety (lowest high-risk segments), then road-network distance, then stable ID
-                    safe_shelter_candidates.sort(key=lambda s: (s['high_count'], s['road_dist'], s['id']))
-                    best_match = safe_shelter_candidates[0]
-                    best_sh = best_match['shelter']
-                    rs_path = best_match['path']
-                    reallocated = True
-                    reallocated_shelter = best_sh
-                    dist_km = round(best_match['road_dist'] / 1000.0, 2)
-                    reallocation_reason = (
-                        f"Primary destination blocked by flood hazard. "
-                        f"Automatically reallocated to closest safe shelter: {best_sh['name']} ({dist_km} km)."
-                    )
+                    if safe_shelter_candidates:
+                        safe_shelter_candidates.sort(key=lambda s: (s['high_count'], s['road_dist'], s['id']))
+                        best_match = safe_shelter_candidates[0]
+                        best_sh = best_match['shelter']
+                        rs_path = best_match['path']
+                        reallocated = True
+                        reallocated_shelter = best_sh
+                        dist_km = round(best_match['road_dist'] / 1000.0, 2)
+                        reallocation_reason = (
+                            f"Primary destination blocked by flood hazard. "
+                            f"Strictly rerouted to safe shelter away from flood: {best_sh['name']} ({dist_km} km)."
+                        )
 
             if rs_path is None:
-                rs_error = "No route satisfying the configured safety constraints is available. No safe route available — request rescue assistance."
+                rs_error = "No route satisfying the configured safety constraints is available. no safe route is available  requesting for rescue"
 
     def extract_metrics(path, graph, use_effective=False):
         total_dist = 0
@@ -1177,6 +1404,7 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
             "affected_roads": affected_roads[:3000],
             "affected_roads_count": len(affected_roads),
             "flood_active": flood_active,
+            "origin_zone": orig_zone,
             "route_validated": True,
             "routing_objective": {
                 "normal": "Minimizes total distance (meters) on the base road network, ignoring flood state.",
@@ -1184,7 +1412,7 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
             }
         }
     else:
-        # No safe route found / completely trapped
+        # No safe route found / completely trapped / origin submerged
         return {
             "origin": list(origin_node),
             "destination": list(dest_node),
@@ -1192,8 +1420,10 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
             "route_safety": "blocked",
             "normal": normal_metrics,
             "routesense": None,
-            "error": "No safe route available — request rescue assistance.",
-            "routesense_error": rs_error or "No route satisfying the configured safety constraints is available. No safe route available — request rescue assistance.",
+            "error": "no safe route is available  requesting for rescue",
+            "routesense_error": rs_error or "no safe route is available  requesting for rescue",
+            "origin_submerged": (orig_zone == 'inner'),
+            "origin_zone": orig_zone,
             "reallocated": False,
             "reallocated_shelter": None,
             "reallocation_reason": None,
@@ -1204,7 +1434,7 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
             "route_validated": False,
             "routing_objective": {
                 "normal": "Minimizes total distance (meters) on the base road network, ignoring flood state.",
-                "routesense": "No safe route available — request rescue assistance."
+                "routesense": "no safe route is available  requesting for rescue"
             }
         }
 
@@ -1258,7 +1488,7 @@ def route():
     flood_polygon = None
     flood_zones = None
 
-    if flood and flood.get('active'):
+    if flood and (flood.get('active') or (flood.get('active') is not False and bool(flood.get('center') or flood.get('flood_zones') or flood.get('zones') or flood.get('polygon')))):
         flood_center = flood.get('center')
         flood_radius = flood.get('radius', 2000)
         flood_intensity = flood.get('intensity', 0.5)
@@ -1304,7 +1534,7 @@ def reroute_shelter():
     flood_polygon = None
     flood_zones = None
 
-    if flood and flood.get('active'):
+    if flood and (flood.get('active') or (flood.get('active') is not False and bool(flood.get('center') or flood.get('flood_zones') or flood.get('zones') or flood.get('polygon')))):
         flood_center = flood.get('center')
         flood_radius = flood.get('radius', 2000)
         flood_intensity = flood.get('intensity', 0.5)
@@ -1407,7 +1637,7 @@ def nearest_shelter():
     flood_polygon = None
     flood_zones = None
 
-    if flood and flood.get('active'):
+    if flood and (flood.get('active') or (flood.get('active') is not False and bool(flood.get('center') or flood.get('flood_zones') or flood.get('zones') or flood.get('polygon')))):
         flood_center = flood.get('center')
         flood_radius = flood.get('radius', 2000)
         flood_intensity = flood.get('intensity', 0.5)
@@ -1421,6 +1651,30 @@ def nearest_shelter():
     if orig_node is None:
         return jsonify({"error": "Could not map origin to road network"}), 400
 
+    orig_zone = None
+    if flood_active and flood_center is not None and flood_radius and flood_radius > 0:
+        z1 = get_origin_flood_zone(origin, flood_center, flood_radius)
+        z2 = get_origin_flood_zone(orig_node, flood_center, flood_radius)
+        if z1 == 'inner' or z2 == 'inner':
+            orig_zone = 'inner'
+        elif z1 == 'intermediate' or z2 == 'intermediate':
+            orig_zone = 'intermediate'
+        elif z1 == 'outer' or z2 == 'outer':
+            orig_zone = 'outer'
+
+    if orig_zone is None and flood_active and (flood_polygon or flood_zones):
+        if is_point_in_flood(origin, None, 0, flood_polygon, flood_zones) or \
+           is_point_in_flood(orig_node, None, 0, flood_polygon, flood_zones):
+            orig_zone = 'inner'
+
+    if orig_zone == 'inner':
+        return jsonify({
+            "error": "no safe route is available  requesting for rescue",
+            "origin_submerged": True,
+            "best_shelter": None,
+            "all_shelters": []
+        }), 200
+
     # 1. Prepare graph
     if flood_active:
         G_w = compute_edge_weights(
@@ -1430,15 +1684,45 @@ def nearest_shelter():
             flood_polygon=flood_polygon, flood_zones=flood_zones
         )
         passable_edges = [(u, v) for u, v, d in G_w.edges(data=True) if not d.get('impassable', False)]
-        G_eval = G_w.edge_subgraph(passable_edges)
+
+        def is_edge_in_inner(u_e, v_e):
+            if G_w[u_e][v_e].get('impassable', False):
+                return True
+            mid_e = ((u_e[0] + v_e[0]) * 0.5, (u_e[1] + v_e[1]) * 0.5)
+            if flood_center is not None and flood_radius and flood_radius > 0:
+                inner_r = flood_radius * 0.50
+                c = tuple(flood_center)
+                if haversine(mid_e, c) <= inner_r or haversine(u_e, c) <= inner_r or haversine(v_e, c) <= inner_r:
+                    return True
+            if flood_polygon or flood_zones:
+                if is_point_in_flood(mid_e, None, 0, flood_polygon, flood_zones) or \
+                   is_point_in_flood(u_e, None, 0, flood_polygon, flood_zones) or \
+                   is_point_in_flood(v_e, None, 0, flood_polygon, flood_zones):
+                    return True
+            return False
+
+        if orig_zone in ('intermediate', 'outer'):
+            # Origin inside intermediate or outer flood circle: strictly exclude inner circle
+            eval_edges = [(u, v) for u, v in passable_edges if not is_edge_in_inner(u, v)]
+        else:
+            def is_edge_in_full_flood(u_e, v_e):
+                if G_w[u_e][v_e].get('impassable', False):
+                    return True
+                mid_e = ((u_e[0] + v_e[0]) * 0.5, (u_e[1] + v_e[1]) * 0.5)
+                return is_point_in_flood(mid_e, flood_center, flood_radius, flood_polygon, flood_zones) or \
+                       is_point_in_flood(u_e, flood_center, flood_radius, flood_polygon, flood_zones) or \
+                       is_point_in_flood(v_e, flood_center, flood_radius, flood_polygon, flood_zones)
+            eval_edges = [(u, v) for u, v in passable_edges if not is_edge_in_full_flood(u, v)]
+
+        G_eval = G_w.edge_subgraph(eval_edges)
     else:
         G_eval = G_BASE
 
     # 2. Single-source Dijkstra for ALL reachable nodes in ONE pass (sub-millisecond)
     try:
-        dist_dict = nx.single_source_dijkstra_path_length(G_eval, orig_node, weight='distance')
+        dist_dict, path_dict = nx.single_source_dijkstra(G_eval, orig_node, weight='distance')
     except Exception:
-        dist_dict = {}
+        dist_dict, path_dict = {}, {}
 
     ranked = []
     for sh in SHELTERS:
@@ -1448,19 +1732,34 @@ def nearest_shelter():
             continue
 
         sh_node, _ = nearest_node(G_BASE, tuple(sh_coords))
+        if sh_node is None or (flood_active and is_point_in_flood(sh_node, flood_center, flood_radius, flood_polygon, flood_zones)):
+            continue
+
         if sh_node in dist_dict:
             road_dist = dist_dict[sh_node]
+            c_path = path_dict[sh_node]
+            h_cnt = sum(1 for k in range(len(c_path)-1)
+                        if G_w.get_edge_data(c_path[k], c_path[k+1]).get('effective_risk', 0) == 2) if flood_active else 0
             ranked.append({
                 **sh,
                 "road_distance_m": round(road_dist, 1),
-                "road_distance_km": round(road_dist / 1000.0, 2)
+                "road_distance_km": round(road_dist / 1000.0, 2),
+                "high_count": h_cnt
             })
 
     if not ranked:
-        return jsonify({"error": "No safe shelter is currently reachable by road"}), 404
+        return jsonify({
+            "error": "no safe route is available  requesting for rescue",
+            "origin_submerged": (orig_zone == 'inner'),
+            "best_shelter": None,
+            "all_shelters": []
+        }), 200
 
-    # Rank strictly by shortest road distance
-    ranked.sort(key=lambda s: s['road_distance_m'])
+    # Rank strictly prioritizing low risk factor, then nearby road distance to origin
+    if flood_active:
+        ranked.sort(key=lambda s: (s['high_count'], s['road_distance_m'], s['id']))
+    else:
+        ranked.sort(key=lambda s: s['road_distance_m'])
     best_shelter = ranked[0]
 
     # Compute full routing metrics to this best shelter
@@ -1483,6 +1782,14 @@ def nearest_shelter():
                 best_shelter = alt_sh
                 route_data = alt_route
                 break
+
+    if flood_active and route_data.get('routesense') is None:
+        return jsonify({
+            "error": "no safe route is available  requesting for rescue",
+            "origin_submerged": False,
+            "best_shelter": None,
+            "all_shelters": ranked
+        }), 200
 
     return jsonify({
         "best_shelter": best_shelter,

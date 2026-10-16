@@ -1160,7 +1160,7 @@ async function findRoute(silent = false) {
         if (data.routesense) {
             setStatus('ok', data.flood_active ? (data.reallocated ? 'SAFE CORRIDOR: SHELTER REALLOCATED' : 'SAFE ROUTE: FLOOD HAZARD EVADED') : 'OPTIMAL EVACUATION ROUTE');
         } else {
-            setStatus('danger', 'NO SAFE ROUTE AVAILABLE — REQUEST RESCUE');
+            setStatus('danger', 'NO SAFE ROUTE IS AVAILABLE - REQUESTING FOR RESCUE');
         }
     } catch (e) {
         console.error('Routing failed:', e);
@@ -1310,6 +1310,10 @@ function renderRouteDetails(data) {
         // NO SAFE ROUTE AVAILABLE (Requirement: Must display exact string)
         resultsPanel.style.display = 'none';
         rescueBanner.style.display = 'flex';
+        const msgEl = rescueBanner.querySelector('.rescue-card-msg');
+        if (msgEl) {
+            msgEl.textContent = 'no safe route is available  requesting for rescue';
+        }
     }
 }
 
@@ -1486,7 +1490,11 @@ function updateStatusDashboard(routeData, simData) {
 
         // Display exact rescue required prompt
         rescueBanner.style.display = 'flex';
-        warningsList.innerHTML += '<div class="warning-item danger">CRITICAL: No safe route available — request rescue assistance. All overland road corridors to destination are submerged.</div>';
+        const msgEl = rescueBanner.querySelector('.rescue-card-msg');
+        if (msgEl) {
+            msgEl.textContent = 'no safe route is available  requesting for rescue';
+        }
+        warningsList.innerHTML += '<div class="warning-item danger">CRITICAL: no safe route is available  requesting for rescue. All overland road corridors to destination are submerged.</div>';
     }
 }
 
@@ -1573,7 +1581,15 @@ async function findNearestSafeSpot() {
         const data = await res.json();
 
         if (data.error || !data.best_shelter) {
-            alert(data.error || 'No safe shelter is currently reachable by road.');
+            setStatus('danger', 'NO SAFE ROUTE IS AVAILABLE - REQUESTING FOR RESCUE');
+            const rescueBanner = document.getElementById('rescue-banner-route');
+            if (rescueBanner) {
+                rescueBanner.style.display = 'flex';
+                const msgEl = rescueBanner.querySelector('.rescue-card-msg');
+                if (msgEl) msgEl.textContent = 'no safe route is available  requesting for rescue';
+            }
+            clearRoutes();
+            alert(data.error || 'no safe route is available  requesting for rescue');
             btn.disabled = false;
             btn.textContent = '🛡️ FIND SAFE SHELTER';
             return;
