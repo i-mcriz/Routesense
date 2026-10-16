@@ -876,7 +876,7 @@ function debounceSimulate() {
     if (simAutoDebounceTimer) clearTimeout(simAutoDebounceTimer);
     simAutoDebounceTimer = setTimeout(() => {
         simulateFlood(false);
-    }, 120);
+    }, 250);
 }
 
 async function simulateFlood(fromPlayback = false) {
@@ -975,7 +975,7 @@ function renderAffectedRoads(affectedRoads) {
             opacity = 0.85;
         }
 
-        const polyline = L.polyline(coords, { color, weight, opacity }).addTo(affectedRoadsLayer);
+        const polyline = L.polyline(coords, { color, weight, opacity, renderer: canvas }).addTo(affectedRoadsLayer);
         const statusLabel = road.impassable ? 'IMPASSABLE / BLOCKED' : (isLowElev ? 'CRITICAL LOW ELEVATION' : (isMedElev ? 'MEDIUM ELEVATION HAZARD' : 'ELEVATED RISK'));
         polyline.bindPopup(
             `<strong>Flood-Affected Road Segment</strong><br>` +

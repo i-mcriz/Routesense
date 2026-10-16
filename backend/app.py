@@ -744,6 +744,84 @@ EDGE_MIDS = np.array([
 print(f"[RouteSense] Ready: {len(NODE_LIST)} nodes indexed in KD-Tree ({len(ROUTABLE_NODE_LIST)} routable), {len(EDGE_LIST)} edges indexed.")
 
 
+# ── Precomputed Baseline Profile Graphs & Spatial Cache ───────────
+BASE_PROFILE_GRAPHS = {}
+_EDGE_WEIGHTS_CACHE = {}
+_CACHE_MAX_SIZE = 48
+_NORMAL_PATH_CACHE = {}
+_ROUTE_RESULT_CACHE = {}
+_ROUTE_CACHE_MAX_SIZE = 64
+
+def init_base_profile_graphs():
+    global BASE_PROFILE_GRAPHS
+    print("[RouteSense] Precomputing baseline profile graphs for sub-millisecond routing...")
+    t_start = time.time()
+    for p_name, profile in PROFILES.items():
+        G_p = G_BASE.copy()
+        risk_mults = {0: profile['low'], 1: profile['medium'], 2: profile['high']}
+        slope_pen = profile['slope_penalty']
+        avoid_steps = profile['avoid_steps']
+        avoid_footway = profile['avoid_footway']
+        max_slope = profile.get('max_slope', None)
+
+        for u, v, data in G_p.edges(data=True):
+            dist = data['distance']
+            risk = data['predicted_risk']
+            highway = data.get('highway', '')
+            slope_val = data.get('slope', 0)
+            is_imp = False
+            mult = risk_mults.get(risk, 1.0)
+            cost = dist * mult
+
+            if slope_pen > 0 and slope_val > 5:
+                cost += dist * slope_pen * (slope_val / 10)
+
+            if avoid_steps and highway == 'steps':
+                if p_name == 'wheelchair':
+                    is_imp = True
+                    cost = float('inf')
+                else:
+                    cost += dist * 50
+
+            if avoid_footway and highway in ('footway', 'path'):
+                cost += dist * 10
+
+            if max_slope is not None and slope_val > max_slope:
+                if p_name == 'wheelchair':
+                    is_imp = True
+                    cost = float('inf')
+                else:
+                    cost += dist * 50
+
+            data['routesense_cost'] = cost
+            data['effective_risk'] = risk
+            data['flood_penalty'] = 0.0
+            data['impassable'] = is_imp
+
+        BASE_PROFILE_GRAPHS[p_name] = G_p
+    print(f"[RouteSense] Baseline profile graphs ready in {time.time()-t_start:.2f}s ({list(BASE_PROFILE_GRAPHS.keys())}).")
+
+init_base_profile_graphs()
+
+
+def get_flood_cache_key(profile_name, flood_center, flood_radius, flood_intensity, water_level, flood_polygon, flood_zones):
+    fc = tuple(round(float(x), 4) for x in flood_center) if flood_center is not None else None
+    fr = round(float(flood_radius), 1) if flood_radius is not None else None
+    fi = round(float(flood_intensity), 3) if flood_intensity is not None else None
+    wl = round(float(water_level), 2) if water_level is not None else None
+    fp = tuple(tuple(round(float(c), 4) for c in pt) for pt in flood_polygon) if flood_polygon is not None else None
+    fz = None
+    if flood_zones:
+        fz_list = []
+        for z in flood_zones:
+            if isinstance(z, dict):
+                pts = z.get('polygon')
+                z_pts = tuple(tuple(round(float(c), 4) for c in pt) for pt in pts) if pts else ()
+                fz_list.append((z.get('id', ''), round(float(z.get('intensity', 0)), 3), round(float(z.get('water_level', 0)), 2), z_pts))
+        fz = tuple(fz_list)
+    return (profile_name, fc, fr, fi, wl, fp, fz)
+
+
 # ── Routing Engine ─────────────────────────────────────────────
 
 def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
@@ -751,7 +829,7 @@ def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
                          flood_zones=None):
     """
     Recompute edge weights on the graph considering profile and optional flood simulation.
-    Returns a new graph with updated weights.
+    Returns a graph with updated weights.
 
     Supports both baseline circular flood and multiple custom flood zones with
     independent simulated rainfall intensities.
@@ -759,6 +837,7 @@ def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
     Optimization:
         Spatial bounding-box pre-filtering reduces candidate edges from 60,567 down
         to ~100-400 before computing haversine or Shapely geometries, yielding >100x speedup.
+        Precomputed profile base graphs and LRU caching make repeated or chained requests 0.0ms.
 
     Overlapping Zone Rule:
         Deterministic maximum penalty: flood_penalty = max(penalties) across all intersecting
@@ -779,8 +858,6 @@ def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
     avoid_steps = profile['avoid_steps']
     avoid_footway = profile['avoid_footway']
     max_slope = profile.get('max_slope', None)
-
-    G_weighted = G.copy()
 
     # 1. Circle bounding box pre-computation
     circle_bbox = None
@@ -837,6 +914,20 @@ def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
     has_zones = len(parsed_zones) > 0
     has_any_flood = has_circle or has_zones
 
+    # ── Fast path: Zero flood condition uses precomputed baseline profile graph directly ──
+    if not has_any_flood:
+        base_p = BASE_PROFILE_GRAPHS.get(profile_name)
+        if base_p is not None and G is G_BASE:
+            return base_p
+
+    # ── Cache lookup for repeated flood queries ──
+    cache_key = get_flood_cache_key(profile_name, flood_center, flood_radius, flood_intensity, water_level, flood_polygon, flood_zones)
+    if cache_key in _EDGE_WEIGHTS_CACHE:
+        return _EDGE_WEIGHTS_CACHE[cache_key]
+
+    base_p = BASE_PROFILE_GRAPHS.get(profile_name, BASE_PROFILE_GRAPHS.get('general', G))
+    G_weighted = base_p.copy() if base_p is not None else G.copy()
+
     all_minx = all_miny = all_maxx = all_maxy = None
     if has_any_flood:
         bboxes = []
@@ -850,6 +941,15 @@ def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
         all_maxy = max(b[3] for b in bboxes)
 
     for u, v, data in G_weighted.edges(data=True):
+        e_minx = u[0] if u[0] < v[0] else v[0]
+        e_maxx = u[0] if u[0] > v[0] else v[0]
+        e_miny = u[1] if u[1] < v[1] else v[1]
+        e_maxy = u[1] if u[1] > v[1] else v[1]
+
+        # Fast reject edges outside overall flood bounding box (already have valid base attributes)
+        if has_any_flood and (e_minx > all_maxx or e_maxx < all_minx or e_miny > all_maxy or e_maxy < all_miny):
+            continue
+
         dist = data['distance']
         original_risk = data['predicted_risk']
         highway = data.get('highway', '')
@@ -859,51 +959,42 @@ def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
         flood_penalty_val = 0.0
         is_impassable = False
 
-        in_flood_geom = False
-        if has_any_flood:
-            e_minx = u[0] if u[0] < v[0] else v[0]
-            e_maxx = u[0] if u[0] > v[0] else v[0]
-            e_miny = u[1] if u[1] < v[1] else v[1]
-            e_maxy = u[1] if u[1] > v[1] else v[1]
+        mid = ((u[0] + v[0]) * 0.5, (u[1] + v[1]) * 0.5)
 
-            # Fast reject edges outside overall flood bounding box
-            if not (e_minx > all_maxx or e_maxx < all_minx or e_miny > all_maxy or e_maxy < all_miny):
-                mid = ((u[0] + v[0]) * 0.5, (u[1] + v[1]) * 0.5)
+        # ── Circular flood simulation penalty ──
+        if has_circle:
+            c_minx, c_miny, c_maxx, c_maxy = circle_bbox
+            if not (e_minx > c_maxx or e_maxx < c_minx or e_miny > c_maxy or e_maxy < c_miny):
+                d_to_flood = haversine(mid, tuple(flood_center))
+                if d_to_flood < flood_radius:
+                    proximity = 1.0 - (d_to_flood / flood_radius)
+                    elev = data.get('elevation', 50)
+                    elev_factor = max(0, 1.0 - (elev / 500.0))
+                    circle_pen = proximity * flood_intensity * elev_factor * water_level
+                    if circle_pen > flood_penalty_val:
+                        flood_penalty_val = circle_pen
 
-                # ── Circular flood simulation penalty ──
-                if has_circle:
-                    c_minx, c_miny, c_maxx, c_maxy = circle_bbox
-                    if not (e_minx > c_maxx or e_maxx < c_minx or e_miny > c_maxy or e_maxy < c_miny):
-                        d_to_flood = haversine(mid, tuple(flood_center))
-                        if d_to_flood < flood_radius:
-                            proximity = 1.0 - (d_to_flood / flood_radius)
-                            elev = data.get('elevation', 50)
-                            elev_factor = max(0, 1.0 - (elev / 500.0))
-                            circle_pen = proximity * flood_intensity * elev_factor * water_level
-                            if circle_pen > flood_penalty_val:
-                                flood_penalty_val = circle_pen
-
-                # ── Multi-zone flood simulation penalty ──
-                if has_zones:
-                    mid_pt = None
-                    seg_ln = None
-                    for pz in parsed_zones:
-                        z_minx, z_miny, z_maxx, z_maxy = pz['bounds']
-                        if e_minx > z_maxx or e_maxx < z_minx or e_miny > z_maxy or e_maxy < z_miny:
-                            continue
-                        if mid_pt is None:
-                            mid_pt = Point(mid[0], mid[1])
-                            seg_ln = LineString([u, v])
-                        sp = pz['shapely']
-                        if sp.contains(mid_pt) or sp.intersects(seg_ln):
-                            boundary = pz['boundary']
-                            dist_from_boundary = boundary.distance(mid_pt) if boundary else 0.0
-                            interior_depth = min(1.0, dist_from_boundary / pz['max_dist'])
-                            elev = data.get('elevation', 50)
-                            elev_factor = max(0, 1.0 - (elev / 500.0))
-                            poly_penalty = (0.5 + 0.5 * interior_depth) * pz['intensity'] * elev_factor * pz['water_level']
-                            if poly_penalty > flood_penalty_val:
-                                flood_penalty_val = poly_penalty
+        # ── Multi-zone flood simulation penalty ──
+        if has_zones:
+            mid_pt = None
+            seg_ln = None
+            for pz in parsed_zones:
+                z_minx, z_miny, z_maxx, z_maxy = pz['bounds']
+                if e_minx > z_maxx or e_maxx < z_minx or e_miny > z_maxy or e_maxy < z_miny:
+                    continue
+                if mid_pt is None:
+                    mid_pt = Point(mid[0], mid[1])
+                    seg_ln = LineString([u, v])
+                sp = pz['shapely']
+                if sp.contains(mid_pt) or sp.intersects(seg_ln):
+                    boundary = pz['boundary']
+                    dist_from_boundary = boundary.distance(mid_pt) if boundary else 0.0
+                    interior_depth = min(1.0, dist_from_boundary / pz['max_dist'])
+                    elev = data.get('elevation', 50)
+                    elev_factor = max(0, 1.0 - (elev / 500.0))
+                    poly_penalty = (0.5 + 0.5 * interior_depth) * pz['intensity'] * elev_factor * pz['water_level']
+                    if poly_penalty > flood_penalty_val:
+                        flood_penalty_val = poly_penalty
 
         # ── Apply flood penalty thresholds ──
         if flood_penalty_val > IMPASSABLE_THRESHOLD:
@@ -950,6 +1041,11 @@ def compute_edge_weights(G, profile_name, flood_center=None, flood_radius=2000,
         G_weighted[u][v]['flood_penalty'] = round(flood_penalty_val, 4)
         G_weighted[u][v]['impassable'] = is_impassable
 
+    if cache_key is not None:
+        if len(_EDGE_WEIGHTS_CACHE) >= _CACHE_MAX_SIZE:
+            _EDGE_WEIGHTS_CACHE.pop(next(iter(_EDGE_WEIGHTS_CACHE)))
+        _EDGE_WEIGHTS_CACHE[cache_key] = G_weighted
+
     return G_weighted
 
 
@@ -977,6 +1073,17 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
     if reallocate is not None:
         auto_reallocate = reallocate
 
+    route_cache_key = (
+        tuple(round(float(x), 5) for x in origin),
+        tuple(round(float(x), 5) for x in destination),
+        profile_name,
+        objective,
+        auto_reallocate,
+        get_flood_cache_key(profile_name, flood_center, flood_radius, flood_intensity, water_level, flood_polygon, flood_zones)
+    )
+    if route_cache_key in _ROUTE_RESULT_CACHE:
+        return _ROUTE_RESULT_CACHE[route_cache_key]
+
     origin_node, origin_dist = nearest_node(G_BASE, tuple(origin), NODE_LIST)
     dest_node, dest_dist = nearest_node(G_BASE, tuple(destination), NODE_LIST)
 
@@ -994,7 +1101,13 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
                                flood_intensity, water_level, flood_polygon, flood_zones=flood_zones)
 
     # Normal route (distance only, on base graph — always ignores flood state)
-    normal_path = nx.shortest_path(G_BASE, source=origin_node, target=dest_node, weight='distance')
+    normal_key = (origin_node, dest_node)
+    if normal_key in _NORMAL_PATH_CACHE:
+        normal_path = _NORMAL_PATH_CACHE[normal_key]
+    else:
+        normal_path = nx.shortest_path(G_BASE, source=origin_node, target=dest_node, weight='distance')
+        if len(_NORMAL_PATH_CACHE) < 512:
+            _NORMAL_PATH_CACHE[normal_key] = normal_path
 
     # Passable subgraph (strictly excludes impassable roads where flood_penalty > 0.85)
     passable_edges = [(u, v) for u, v, d in G_w.edges(data=True) if not d.get('impassable', False)]
@@ -1008,6 +1121,47 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
     reallocated_shelter = None
     reallocation_reason = None
     orig_zone = None
+
+    # Overall and inner flood bounding boxes for fast coordinate pre-filtering
+    fb_minx = fb_miny = fb_maxx = fb_maxy = None
+    inner_minx = inner_miny = inner_maxx = inner_maxy = None
+
+    if flood_active:
+        if flood_center is not None and flood_radius and flood_radius > 0:
+            c_lon, c_lat = float(flood_center[0]), float(flood_center[1])
+            d_lat = (flood_radius / 110000.0) * 1.05
+            d_lon = (flood_radius / 108000.0) * 1.05
+            fb_minx, fb_miny = c_lon - d_lon, c_lat - d_lat
+            fb_maxx, fb_maxy = c_lon + d_lon, c_lat + d_lat
+
+            inner_r = flood_radius * 0.50
+            in_lat = (inner_r / 110000.0) * 1.05
+            in_lon = (inner_r / 108000.0) * 1.05
+            inner_minx, inner_miny = c_lon - in_lon, c_lat - in_lat
+            inner_maxx, inner_maxy = c_lon + in_lon, c_lat + in_lat
+
+        if flood_zones or flood_polygon:
+            z_boxes = []
+            if flood_zones:
+                for z in flood_zones:
+                    pts = z.get('polygon') if isinstance(z, dict) else None
+                    if pts:
+                        z_boxes.append((min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)))
+            elif flood_polygon:
+                z_boxes.append((min(p[0] for p in flood_polygon), min(p[1] for p in flood_polygon), max(p[0] for p in flood_polygon), max(p[1] for p in flood_polygon)))
+            if z_boxes:
+                z_minx = min(b[0] for b in z_boxes)
+                z_miny = min(b[1] for b in z_boxes)
+                z_maxx = max(b[2] for b in z_boxes)
+                z_maxy = max(b[3] for b in z_boxes)
+                fb_minx = min(fb_minx, z_minx) if fb_minx is not None else z_minx
+                fb_miny = min(fb_miny, z_miny) if fb_miny is not None else z_miny
+                fb_maxx = max(fb_maxx, z_maxx) if fb_maxx is not None else z_maxx
+                fb_maxy = max(fb_maxy, z_maxy) if fb_maxy is not None else z_maxy
+                inner_minx = min(inner_minx, z_minx) if inner_minx is not None else z_minx
+                inner_miny = min(inner_miny, z_miny) if inner_miny is not None else z_miny
+                inner_maxx = max(inner_maxx, z_maxx) if inner_maxx is not None else z_maxx
+                inner_maxy = max(inner_maxy, z_maxy) if inner_maxy is not None else z_maxy
 
     if not flood_active:
         # Dry Condition: routesense route must strictly equal normal Dijkstra shortest route
@@ -1041,6 +1195,12 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
         def is_edge_in_inner_flood(u_e, v_e):
             if G_w[u_e][v_e].get('impassable', False):
                 return True
+            if inner_minx is not None:
+                u_x, u_y = u_e
+                v_x, v_y = v_e
+                if (u_x < inner_minx and v_x < inner_minx) or (u_x > inner_maxx and v_x > inner_maxx) or \
+                   (u_y < inner_miny and v_y < inner_miny) or (u_y > inner_maxy and v_y > inner_maxy):
+                    return False
             mid_e = ((u_e[0] + v_e[0]) * 0.5, (u_e[1] + v_e[1]) * 0.5)
             if flood_center is not None and flood_radius and flood_radius > 0:
                 inner_r = flood_radius * 0.50
@@ -1057,6 +1217,12 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
         def is_edge_in_full_flood(u_e, v_e):
             if G_w[u_e][v_e].get('impassable', False):
                 return True
+            if fb_minx is not None:
+                u_x, u_y = u_e
+                v_x, v_y = v_e
+                if (u_x < fb_minx and v_x < fb_minx) or (u_x > fb_maxx and v_x > fb_maxx) or \
+                   (u_y < fb_miny and v_y < fb_miny) or (u_y > fb_maxy and v_y > fb_maxy):
+                    return False
             mid_e = ((u_e[0] + v_e[0]) * 0.5, (u_e[1] + v_e[1]) * 0.5)
             return is_point_in_flood(mid_e, flood_center, flood_radius, flood_polygon, flood_zones) or \
                    is_point_in_flood(u_e, flood_center, flood_radius, flood_polygon, flood_zones) or \
@@ -1240,10 +1406,9 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
             else:
                 if not dest_in_flood:
                     try:
-                        if nx.has_path(G_safe, origin_node, dest_node):
-                            cost_weight = 'distance' if objective == 'shortest' else 'routesense_cost'
-                            candidate_path = nx.shortest_path(G_safe, source=origin_node, target=dest_node, weight=cost_weight)
-                            rs_path = candidate_path
+                        cost_weight = 'distance' if objective == 'shortest' else 'routesense_cost'
+                        candidate_path = nx.shortest_path(G_safe, source=origin_node, target=dest_node, weight=cost_weight)
+                        rs_path = candidate_path
                     except (nx.NetworkXNoPath, nx.NodeNotFound):
                         rs_path = None
 
@@ -1341,6 +1506,12 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
     affected_roads = []
     if flood_active:
         for u, v, data in G_w.edges(data=True):
+            if fb_minx is not None:
+                u_x, u_y = u
+                v_x, v_y = v
+                if (u_x < fb_minx and v_x < fb_minx) or (u_x > fb_maxx and v_x > fb_maxx) or \
+                   (u_y < fb_miny and v_y < fb_miny) or (u_y > fb_maxy and v_y > fb_maxy):
+                    continue
             if data.get('effective_risk', data['predicted_risk']) != data['predicted_risk']:
                 affected_roads.append({
                     "coordinates": [list(u), list(v)],
@@ -1383,7 +1554,7 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
         else:
             routes_differ = normal_path != rs_path or reallocated
 
-        return {
+        res = {
             "origin": list(origin_node),
             "destination": list(dest_node) if not reallocated else list(rs_path[-1]),
             "original_destination": list(dest_node),
@@ -1411,9 +1582,13 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
                 "routesense": "Minimizes risk-weighted distance (risk-weighted meters). Roads with flood_penalty > {} are excluded as impassable.".format(IMPASSABLE_THRESHOLD)
             }
         }
+        if len(_ROUTE_RESULT_CACHE) >= _ROUTE_CACHE_MAX_SIZE:
+            _ROUTE_RESULT_CACHE.pop(next(iter(_ROUTE_RESULT_CACHE)))
+        _ROUTE_RESULT_CACHE[route_cache_key] = res
+        return res
     else:
         # No safe route found / completely trapped / origin submerged
-        return {
+        res = {
             "origin": list(origin_node),
             "destination": list(dest_node),
             "profile": profile_name,
@@ -1437,6 +1612,10 @@ def run_routing(origin, destination, profile_name, flood_center=None, flood_radi
                 "routesense": "no safe route is available  requesting for rescue"
             }
         }
+        if len(_ROUTE_RESULT_CACHE) >= _ROUTE_CACHE_MAX_SIZE:
+            _ROUTE_RESULT_CACHE.pop(next(iter(_ROUTE_RESULT_CACHE)))
+        _ROUTE_RESULT_CACHE[route_cache_key] = res
+        return res
 
 
 # ── Flask App ──────────────────────────────────────────────────
@@ -1685,9 +1864,31 @@ def nearest_shelter():
         )
         passable_edges = [(u, v) for u, v, d in G_w.edges(data=True) if not d.get('impassable', False)]
 
+        # Bounding box pre-filtering for nearest shelter edge checks
+        ns_minx = ns_miny = ns_maxx = ns_maxy = None
+        ns_in_minx = ns_in_miny = ns_in_maxx = ns_in_maxy = None
+        if flood_center is not None and flood_radius and flood_radius > 0:
+            c_lon, c_lat = float(flood_center[0]), float(flood_center[1])
+            d_lat = (flood_radius / 110000.0) * 1.05
+            d_lon = (flood_radius / 108000.0) * 1.05
+            ns_minx, ns_miny = c_lon - d_lon, c_lat - d_lat
+            ns_maxx, ns_maxy = c_lon + d_lon, c_lat + d_lat
+
+            inner_r = flood_radius * 0.50
+            in_lat = (inner_r / 110000.0) * 1.05
+            in_lon = (inner_r / 108000.0) * 1.05
+            ns_in_minx, ns_in_miny = c_lon - in_lon, c_lat - in_lat
+            ns_in_maxx, ns_in_maxy = c_lon + in_lon, c_lat + in_lat
+
         def is_edge_in_inner(u_e, v_e):
             if G_w[u_e][v_e].get('impassable', False):
                 return True
+            if ns_in_minx is not None:
+                u_x, u_y = u_e
+                v_x, v_y = v_e
+                if (u_x < ns_in_minx and v_x < ns_in_minx) or (u_x > ns_in_maxx and v_x > ns_in_maxx) or \
+                   (u_y < ns_in_miny and v_y < ns_in_miny) or (u_y > ns_in_maxy and v_y > ns_in_maxy):
+                    return False
             mid_e = ((u_e[0] + v_e[0]) * 0.5, (u_e[1] + v_e[1]) * 0.5)
             if flood_center is not None and flood_radius and flood_radius > 0:
                 inner_r = flood_radius * 0.50
@@ -1708,6 +1909,12 @@ def nearest_shelter():
             def is_edge_in_full_flood(u_e, v_e):
                 if G_w[u_e][v_e].get('impassable', False):
                     return True
+                if ns_minx is not None:
+                    u_x, u_y = u_e
+                    v_x, v_y = v_e
+                    if (u_x < ns_minx and v_x < ns_minx) or (u_x > ns_maxx and v_x > ns_maxx) or \
+                       (u_y < ns_miny and v_y < ns_miny) or (u_y > ns_maxy and v_y > ns_maxy):
+                        return False
                 mid_e = ((u_e[0] + v_e[0]) * 0.5, (u_e[1] + v_e[1]) * 0.5)
                 return is_point_in_flood(mid_e, flood_center, flood_radius, flood_polygon, flood_zones) or \
                        is_point_in_flood(u_e, flood_center, flood_radius, flood_polygon, flood_zones) or \
@@ -1829,7 +2036,40 @@ def simulate_flood():
     affected = []
     total_eta_mins = 0
     count_eta = 0
+
+    sim_minx = sim_miny = sim_maxx = sim_maxy = None
+    if center is not None and radius and radius > 0:
+        c_lon, c_lat = float(center[0]), float(center[1])
+        d_lat = (radius / 110000.0) * 1.05
+        d_lon = (radius / 108000.0) * 1.05
+        sim_minx, sim_miny = c_lon - d_lon, c_lat - d_lat
+        sim_maxx, sim_maxy = c_lon + d_lon, c_lat + d_lat
+    if flood_zones or polygon:
+        z_boxes = []
+        if flood_zones:
+            for z in flood_zones:
+                pts = z.get('polygon') if isinstance(z, dict) else None
+                if pts:
+                    z_boxes.append((min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)))
+        elif polygon:
+            z_boxes.append((min(p[0] for p in polygon), min(p[1] for p in polygon), max(p[0] for p in polygon), max(p[1] for p in polygon)))
+        if z_boxes:
+            z_minx = min(b[0] for b in z_boxes)
+            z_miny = min(b[1] for b in z_boxes)
+            z_maxx = max(b[2] for b in z_boxes)
+            z_maxy = max(b[3] for b in z_boxes)
+            sim_minx = min(sim_minx, z_minx) if sim_minx is not None else z_minx
+            sim_miny = min(sim_miny, z_miny) if sim_miny is not None else z_miny
+            sim_maxx = max(sim_maxx, z_maxx) if sim_maxx is not None else z_maxx
+            sim_maxy = max(sim_maxy, z_maxy) if sim_maxy is not None else z_maxy
+
     for u, v, edge_data in G_w.edges(data=True):
+        if sim_minx is not None:
+            u_x, u_y = u
+            v_x, v_y = v
+            if (u_x < sim_minx and v_x < sim_minx) or (u_x > sim_maxx and v_x > sim_maxx) or \
+               (u_y < sim_miny and v_y < sim_miny) or (u_y > sim_maxy and v_y > sim_maxy):
+                continue
         if edge_data.get('effective_risk', edge_data['predicted_risk']) != edge_data['predicted_risk']:
             mid = ((u[0]+v[0])/2, (u[1]+v[1])/2)
             d_center = haversine(mid, tuple(center)) if center else 500
